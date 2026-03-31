@@ -8,3 +8,9 @@ __pycache__/
 .pytest_cache/
 dist/
 build/
+
+# Local debug / OCR test output (regenerate as needed)
+debug_output/
+
+# Archives not needed in version control
+*.zip

@@ -1,11 +1,14 @@
+# Asklytics (web)
 
-  # Asklytics
+React + Vite frontend for **Asklytics**.
 
-  This is a code bundle for Asklytics. The original project is available at https://www.figma.com/design/09MXaXlAFpJyp908CWhO4i/Asklytics.
+Full setup (Python API, environment variables, demo account) is documented in the **[root README](../README.md)**.
 
-  ## Running the code
+## Commands
 
-  Run `npm i` to install the dependencies.
+```bash
+npm install
+npm run dev
+```
 
-  Run `npm run dev` to start the development server.
-  
+Design reference (Figma): [Asklytics design](https://www.figma.com/design/09MXaXlAFpJyp908CWhO4i/Asklytics).
