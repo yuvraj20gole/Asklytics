@@ -1,0 +1,5 @@
+Schema:
+{schema_context}
+
+Question:
+{question}

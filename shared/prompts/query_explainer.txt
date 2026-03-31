@@ -1,0 +1,2 @@
+Explain this SQL query in concise business terms:
+{sql}
