@@ -19,6 +19,8 @@ class Settings(BaseSettings):
 
     query_max_rows: int = 200
     backend_url: str = "http://localhost:8000"
+    # Comma-separated browser origins, e.g. https://asklytics.vercel.app,https://yuvraj20gole.github.io
+    cors_allow_origins: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

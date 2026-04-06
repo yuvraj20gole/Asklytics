@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'
+const _rawBase = import.meta.env.VITE_API_BASE
+const API_BASE =
+  typeof _rawBase === 'string' && _rawBase.trim() !== '' ? _rawBase.trim() : 'http://localhost:8000'
 
 /** Thrown for non-OK API responses; use `status === 401` for expired/invalid auth. */
 export class HttpApiError extends Error {

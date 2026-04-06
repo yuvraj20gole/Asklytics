@@ -107,6 +107,21 @@ The repository **root has no `index.html`**—only this README. The real fronten
 
 Deploy the **FastAPI backend** separately and set the web app’s **API base URL** (see `web/.env.example`).
 
+### Render (API + static web in one blueprint)
+
+1. [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint** → connect this repo (uses root **`render.yaml`**).
+2. When the **API** service is live, copy its URL (e.g. `https://asklytics-api.onrender.com`).
+3. Open the **static web** service → **Environment** → set **`VITE_API_BASE`** to that URL (no trailing slash) → **Manual Deploy**.
+4. Open the **API** service → set **`CORS_ALLOW_ORIGINS`** to your **exact** frontend origin (e.g. `https://asklytics-web.onrender.com`). Comma-separate multiple origins if needed.
+5. Backend env: set **`OPENAI_API_KEY`** if you use LLM SQL; **`JWT_SECRET_KEY`** is auto-generated unless you override.
+
+### GitHub Pages (optional)
+
+1. Repo **Settings** → **Pages** → **Build and deployment** → source **GitHub Actions**.
+2. **Settings** → **Secrets and variables** → **Actions** → add **`VITE_API_BASE`** (your production API URL).
+3. Push to `main` (or run workflow manually); the workflow is **`.github/workflows/deploy-web-pages.yml`**.
+4. Set **`CORS_ALLOW_ORIGINS`** on the API to your Pages URL (e.g. `https://<user>.github.io/Asklytics/`).
+
 ---
 
 ## Demo account

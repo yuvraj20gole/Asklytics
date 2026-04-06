@@ -24,13 +24,23 @@ configure_logging()
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):517\d+$",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):517\d+$",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 

@@ -1,0 +1,42 @@
+# Render Blueprint: API + static web (https://render.com/docs/infrastructure-as-code)
+# 1) Push this file to GitHub → Render Dashboard → New → Blueprint → connect repo.
+# 2) After deploy: copy the API URL (e.g. https://asklytics-api.onrender.com).
+# 3) In the static service, set env VITE_API_BASE to that URL (no trailing slash) → Manual Deploy.
+# 4) In the API service, set CORS_ALLOW_ORIGINS to your web URL (e.g. https://asklytics-web.onrender.com).
+#
+# Note: Free Python tier has limited RAM; PyTorch/EasyOCR image ingest may need a larger plan or a slim build.
+
+services:
+  - type: web
+    name: asklytics-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /docs
+    envVars:
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./local.db
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+  - type: web
+    name: asklytics-web
+    runtime: static
+    plan: free
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE
+        sync: false
