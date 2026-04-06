@@ -95,6 +95,20 @@ Set `BACKEND_URL` in the environment if the API is not at `http://localhost:8000
 
 ---
 
+## Deploy the web UI (hosting)
+
+The repository **root has no `index.html`**—only this README. The real frontend is **`web/`** (Vite + React) and must be **built** (`npm run build` → **`web/dist`**).
+
+| Platform | What to do |
+|----------|------------|
+| **Vercel** | Connect the repo; root **`vercel.json`** installs and builds inside `web/` and publishes **`web/dist`**. Alternatively set **Root Directory** to `web` in project settings and use the Vite preset. |
+| **Netlify** | Root **`netlify.toml`** sets `base = "web"` and publishes **`dist`**. |
+| **GitHub Pages (branch / root)** | GitHub does **not** run `npm build` by default—you only see Markdown. Use **Vercel/Netlify** or a **GitHub Action** that builds `web/` and deploys `web/dist`. |
+
+Deploy the **FastAPI backend** separately and set the web app’s **API base URL** (see `web/.env.example`).
+
+---
+
 ## Demo account
 
 After the API starts once, a seeded user may exist (see `backend/app/db/seed.py`):

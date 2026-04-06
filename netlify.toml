@@ -1,0 +1,10 @@
+# Monorepo: UI lives in web/ (Vite + React). Root has no index.html.
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
