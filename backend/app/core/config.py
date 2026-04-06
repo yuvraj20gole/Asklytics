@@ -14,7 +14,8 @@ class Settings(BaseSettings):
 
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 120
+    # Default 7 days for local/demo; override via ACCESS_TOKEN_EXPIRE_MINUTES in production.
+    access_token_expire_minutes: int = 10080
 
     query_max_rows: int = 200
     backend_url: str = "http://localhost:8000"

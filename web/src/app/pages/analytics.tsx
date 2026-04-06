@@ -32,6 +32,16 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useChartColors } from "../hooks/use-chart-colors";
+import {
+  aggregateFactsRevenueOtherIncomeByPeriod,
+  aggregateFactsRevenueOtherIncomeByGroup,
+  aggregateWideSheetRevenueOtherIncomeByGroup,
+  aggregateWideSheetRevenueExpenseByPeriod,
+  formatFiscalYearLabel,
+  inferGroupByColumn,
+  isFinancialFactsLayout,
+} from "../utils/analytics-infer";
+import { canUseCsvFormulaEngine } from "../utils/financial-formulas-csv";
 
 export function Analytics() {
   const { data, isDataLoaded } = useData();
@@ -60,9 +70,6 @@ export function Analytics() {
     // Create a unique counter for this analytics generation
     const uniqueCounter = Math.random().toString(36).substring(2, 15);
 
-    console.log("Analytics Debug - Columns:", columns);
-    console.log("Analytics Debug - First 3 rows:", rows.slice(0, 3));
-
     // Detect currency from dataset
     let currency = "₹"; // Default to INR
     const currencyColumn = columns.find(col => 
@@ -85,7 +92,7 @@ export function Analytics() {
       const hasEUR = columns.some(col => col.toLowerCase().includes("eur") || col.toLowerCase().includes("euro"));
       
       if (hasUSD) currency = "$";
-      else if (hasINR) currency = "���";
+      else if (hasINR) currency = "₹";
       else if (hasEUR) currency = "€";
     }
 
@@ -96,29 +103,18 @@ export function Analytics() {
       return isNumeric && !isYearLike;
     });
 
-    console.log("Analytics Debug - Numeric columns:", numericColumns);
-
-    // Find text/category columns
-    const categoryColumns = columns.filter((col) => {
-      const hasText = rows.some((row) => {
-        const val = row[col];
-        return typeof val === "string" && val.trim() !== "" && isNaN(Number(val));
-      });
-      return hasText;
-    });
-
-    console.log("Analytics Debug - Category columns:", categoryColumns);
-
     // If we have no proper numeric columns, return null
     if (numericColumns.length === 0) {
-      console.log("Analytics Debug - No numeric columns found");
       return null;
     }
 
-    // Prefer category columns, but fall back to year columns if needed
-    const groupByCol = categoryColumns.length > 0 
-      ? categoryColumns[0] 
-      : columns.find(col => /year/i.test(col)) || columns[0];
+    const longFactsLayout = isFinancialFactsLayout(columns);
+    const wideFinancialSheet =
+      canUseCsvFormulaEngine(columns, rows) && !longFactsLayout;
+    const groupByCol = inferGroupByColumn(columns, rows);
+    const groupIsYear = /^year$/i.test(groupByCol);
+    const revenueSplitLayout =
+      (longFactsLayout && groupIsYear) || (wideFinancialSheet && groupIsYear);
     const valueCol = numericColumns[0];
     // Look for "Expenses" column specifically, otherwise use second numeric column
     // Make sure we NEVER select the same column twice
@@ -135,69 +131,109 @@ export function Analytics() {
       valueCol2 = numericColumns[0];
     }
 
-    console.log("Analytics Debug - Using columns:", { groupByCol, valueCol, valueCol2 });
-    console.log("Analytics Debug - Are value columns the same?", valueCol === valueCol2);
-    console.log("Analytics Debug - Numeric columns available:", numericColumns);
+    const chartSeries1Name =
+      longFactsLayout || revenueSplitLayout ? "Revenue" : valueCol;
+    /** Top Year / KPIs: wide CSV year split uses other income (same as long facts). */
+    const chartSeries2Name =
+      longFactsLayout || revenueSplitLayout ? "Other income" : valueCol2;
+    const volumeLineSeries1Name =
+      longFactsLayout || revenueSplitLayout ? "Revenue" : chartSeries1Name;
+    const volumeLineSeries2Name =
+      longFactsLayout && groupIsYear
+        ? "Other income"
+        : wideFinancialSheet && groupIsYear
+          ? "Expenses"
+          : longFactsLayout || revenueSplitLayout
+            ? "Other income"
+            : chartSeries2Name;
 
-    // Top 10 by value
-    const groupedData: Record<string, number> = {};
-    const groupedData2: Record<string, number> = {};
-    
-    rows.forEach((row) => {
-      const rawKey = String(row[groupByCol] || "Unknown");
-      // Normalize key: trim whitespace and convert to consistent case
-      const key = rawKey.trim();
-      const value = Number(row[valueCol]) || 0;
-      const value2 = Number(row[valueCol2]) || 0;
-      
-      // Use case-insensitive matching to prevent duplicates
-      const existingKey = Object.keys(groupedData).find(k => k.toLowerCase() === key.toLowerCase()) || key;
-      
-      groupedData[existingKey] = (groupedData[existingKey] || 0) + value;
-      groupedData2[existingKey] = (groupedData2[existingKey] || 0) + value2;
-    });
+    const metricColFacts = columns.find((c) => /^metric$/i.test(c)) ?? "metric";
+
+    let groupedData: Record<string, number>;
+    let groupedData2: Record<string, number>;
+
+    if (longFactsLayout && groupIsYear) {
+      const agg = aggregateFactsRevenueOtherIncomeByGroup(
+        rows,
+        groupByCol,
+        valueCol,
+        metricColFacts,
+      );
+      groupedData = agg.groupedData;
+      groupedData2 = agg.groupedData2;
+    } else if (wideFinancialSheet && groupIsYear) {
+      const agg = aggregateWideSheetRevenueOtherIncomeByGroup(rows, groupByCol, columns);
+      groupedData = agg.groupedData;
+      groupedData2 = agg.groupedData2;
+    } else {
+      groupedData = {};
+      groupedData2 = {};
+      rows.forEach((row) => {
+        const rawKey = String(row[groupByCol] || "Unknown");
+        const key = rawKey.trim();
+        const value = Number(row[valueCol]) || 0;
+        const value2 = Number(row[valueCol2]) || 0;
+
+        const existingKey =
+          Object.keys(groupedData).find((k) => k.toLowerCase() === key.toLowerCase()) || key;
+
+        groupedData[existingKey] = (groupedData[existingKey] || 0) + value;
+        groupedData2[existingKey] = (groupedData2[existingKey] || 0) + value2;
+      });
+    }
 
     const topItems = Object.entries(groupedData)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 15) // Increased from 10 to 15 to show more items including Other Income
-      .map(([name, value], index) => ({
+      .map(([name, value]) => {
+        const v2 = groupedData2[name] ?? 0;
+        const displayName = revenueSplitLayout ? formatFiscalYearLabel(name) : name;
+        return {
+          name: displayName,
+          value: Math.round(value),
+          value2: Math.round(v2),
+          _tot: value + v2,
+        };
+      })
+      .sort((a, b) => b._tot - a._tot)
+      .slice(0, 15)
+      .map(({ name, value, value2 }, index) => ({
         id: `item-${index}-${uniqueCounter}`,
         name,
-        value: Math.round(value),
-        value2: Math.round(groupedData2[name] || 0),
+        value,
+        value2,
       }));
-
-    console.log("Analytics Debug - Top items:", topItems);
 
     // Time series data (if we have date/year column)
     const dateColumn = columns.find(col => 
       /year|date|month|time|period|fy|quarter|qtr/i.test(col)
     );
     
-    console.log("Analytics Debug - Date column found:", dateColumn);
-    console.log("Analytics Debug - All columns:", columns);
-    
     let timeSeriesData: any[] = [];
     if (dateColumn) {
-      const timeGrouped: Record<string, { value1: number; value2: number }> = {};
-      rows.forEach((row) => {
-        const rawKey = String(row[dateColumn] || "Unknown");
-        // Normalize key: trim whitespace
-        const key = rawKey.trim();
-        const v1 = Number(row[valueCol]) || 0;
-        const v2 = Number(row[valueCol2]) || 0;
-        
-        // Use case-insensitive matching to prevent duplicates
-        const existingKey = Object.keys(timeGrouped).find(k => k.toLowerCase() === key.toLowerCase()) || key;
-        
-        if (!timeGrouped[existingKey]) {
-          timeGrouped[existingKey] = { value1: 0, value2: 0 };
-        }
-        timeGrouped[existingKey].value1 += v1;
-        timeGrouped[existingKey].value2 += v2;
-      });
+      let timeGrouped: Record<string, { value1: number; value2: number }>;
 
-      const usedPeriods = new Set<string>();
+      if (longFactsLayout) {
+        const metricCol = columns.find((c) => /^metric$/i.test(c)) ?? "metric";
+        timeGrouped = aggregateFactsRevenueOtherIncomeByPeriod(rows, dateColumn, valueCol, metricCol);
+      } else if (wideFinancialSheet) {
+        // Volume over time only: second line = expenses (Top Year bars stay revenue vs other income).
+        timeGrouped = aggregateWideSheetRevenueExpenseByPeriod(rows, dateColumn, columns);
+      } else {
+        timeGrouped = {};
+        rows.forEach((row) => {
+          const rawKey = String(row[dateColumn] || "Unknown");
+          const key = rawKey.trim();
+          const v1 = Number(row[valueCol]) || 0;
+          const v2 = Number(row[valueCol2]) || 0;
+          
+          const existingKey = Object.keys(timeGrouped).find(k => k.toLowerCase() === key.toLowerCase()) || key;
+          
+          if (!timeGrouped[existingKey]) {
+            timeGrouped[existingKey] = { value1: 0, value2: 0 };
+          }
+          timeGrouped[existingKey].value1 += v1;
+          timeGrouped[existingKey].value2 += v2;
+        });
+      }
       
       timeSeriesData = Object.entries(timeGrouped)
         .sort(([a], [b]) => {
@@ -225,12 +261,7 @@ export function Analytics() {
             value2: Math.round(values.value2),
           };
         });
-
-      console.log("Analytics Debug - Time series data:", timeSeriesData);
-      console.log("Analytics Debug - Time series length:", timeSeriesData.length);
-      console.log("Analytics Debug - Time series value2 check:", timeSeriesData.map(d => ({ period: d.period, value2: d.value2 })));
     } else {
-      console.log("Analytics Debug - No date column found. Trying to use first column for time series.");
       // Fallback: try using the first column or groupByCol as time axis
       const fallbackDateCol = groupByCol;
       const timeGrouped: Record<string, { value1: number; value2: number }> = {};
@@ -273,8 +304,6 @@ export function Analytics() {
           };
         });
 
-      console.log("Analytics Debug - Fallback time series data:", timeSeriesData);
-      console.log("Analytics Debug - Using column:", fallbackDateCol);
     }
 
     // Pie chart data (top 5)
@@ -293,8 +322,6 @@ export function Analytics() {
       item.percentage = pieTotal > 0 ? Math.round((item.value / pieTotal) * 100) : 0;
     });
 
-    console.log("Analytics Debug - Pie data:", pieData);
-
     // Calculate totals
     const totalValue = Object.values(groupedData).reduce((sum, val) => sum + val, 0);
     const totalValue2 = Object.values(groupedData2).reduce((sum, val) => sum + val, 0);
@@ -302,8 +329,16 @@ export function Analytics() {
     const maxValue = Math.max(...Object.values(groupedData));
     const itemCount = Object.keys(groupedData).length;
 
-    // Calculate rate (value2 / value1 * 100)
+    // Bar / KPI second metric: other income as % of revenue when year-split P&L layout.
     const rate = totalValue > 0 ? ((totalValue2 / totalValue) * 100).toFixed(1) : "0.0";
+
+    // Sum of time-series value2: other income (long facts) or expenses (wide CSV volume line).
+    const totalExpensesTimeSeries =
+      (longFactsLayout || wideFinancialSheet) && timeSeriesData.length > 0
+        ? Math.round(
+            timeSeriesData.reduce((sum: number, d: { value2?: number }) => sum + (d.value2 || 0), 0),
+          )
+        : null;
 
     return {
       topItems,
@@ -318,6 +353,16 @@ export function Analytics() {
       groupByCol,
       valueCol,
       valueCol2,
+      chartSeries1Name,
+      chartSeries2Name,
+      volumeLineSeries1Name,
+      volumeLineSeries2Name,
+      isIngestFactsLayout: longFactsLayout || revenueSplitLayout,
+      /** True for PDF/image long rows; second series = other income. */
+      isLongFactsYearSplit: longFactsLayout && groupIsYear,
+      /** Wide P&L CSV + year column: bars = other income; Volume over time line 2 = expenses. */
+      isWideCsvYearSplit: wideFinancialSheet && groupIsYear,
+      totalExpensesTimeSeries,
       currency,
       dateColumn: dateColumn || "Period",
       uniqueCounter, // Add this for chart keys
@@ -419,7 +464,7 @@ export function Analytics() {
                     <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center shadow-sm">
                       <DollarSign className="w-6 h-6 text-white" />
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">{analytics.valueCol}</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">{analytics.chartSeries1Name}</p>
                   </div>
                   <p className="text-gray-900 dark:text-gray-100 text-3xl font-bold mb-1">
                     {analytics.totalValue.toLocaleString()}
@@ -432,12 +477,18 @@ export function Analytics() {
                     <div className="w-12 h-12 rounded-xl bg-[#22c55e] flex items-center justify-center shadow-sm">
                       <TrendingUp className="w-6 h-6 text-white" />
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">{analytics.valueCol2}</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">{analytics.chartSeries2Name}</p>
                   </div>
                   <p className="text-gray-900 dark:text-gray-100 text-3xl font-bold mb-1">
                     {analytics.totalValue2.toLocaleString()}
                   </p>
-                  <p className="text-gray-500 dark:text-gray-500 text-xs">Secondary metric</p>
+                  <p className="text-gray-500 dark:text-gray-500 text-xs">
+                    {analytics.isLongFactsYearSplit || analytics.isWideCsvYearSplit
+                      ? "Total other income"
+                      : analytics.isIngestFactsLayout
+                        ? "Secondary total"
+                        : "Secondary metric"}
+                  </p>
                 </div>
 
                 <div className="bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-800 border border-purple-100 dark:border-purple-900/50 rounded-xl p-6 shadow-sm">
@@ -463,7 +514,11 @@ export function Analytics() {
                   <p className="text-gray-900 dark:text-gray-100 text-3xl font-bold mb-1">
                     {analytics.rate}%
                   </p>
-                  <p className="text-gray-500 dark:text-gray-500 text-xs">Performance ratio</p>
+                  <p className="text-gray-500 dark:text-gray-500 text-xs">
+                    {analytics.isLongFactsYearSplit || analytics.isWideCsvYearSplit
+                      ? "Other income ÷ revenue"
+                      : "Performance ratio"}
+                  </p>
                 </div>
               </div>
 
@@ -493,18 +548,6 @@ export function Analytics() {
                       // Calculate explicit ticks to ensure all values appear
                       const tickInterval = Math.ceil(maxValue / 5);
                       const ticks = [0, tickInterval, tickInterval * 2, tickInterval * 3, tickInterval * 4, maxValue];
-                      
-                      // Debug logging
-                      console.log("Chart Data (first 5 points):", analytics.timeSeriesData.slice(0, 5));
-                      console.log("Max Value for Y-axis:", maxValue);
-                      console.log("Explicit ticks:", ticks);
-                      console.log("Value1 range:", Math.min(...analytics.timeSeriesData.map((d: any) => d.value1)), "-", Math.max(...analytics.timeSeriesData.map((d: any) => d.value1)));
-                      console.log("Value2 range:", Math.min(...analytics.timeSeriesData.map((d: any) => d.value2)), "-", Math.max(...analytics.timeSeriesData.map((d: any) => d.value2)));
-                      
-                      // Check if values are the same - if so, something is wrong
-                      console.log("ARE VALUES IDENTICAL?", analytics.valueCol === analytics.valueCol2);
-                      console.log("Value Column 1:", analytics.valueCol);
-                      console.log("Value Column 2:", analytics.valueCol2);
                       
                       return (
                         <ResponsiveContainer width="100%" height="100%">
@@ -548,24 +591,24 @@ export function Analytics() {
                               wrapperStyle={{ paddingTop: "20px" }}
                               iconType="line"
                             />
-                            {/* STEP 3 — Both lines use same axis, NO yAxisId */}
+                            {/* Facts/CSV split: Revenue vs other income (long facts) or vs expenses (wide CSV). */}
                             <Line 
                               type="monotone" 
                               dataKey="value1" 
-                              stroke={colors.secondary} 
-                              strokeWidth={3}
-                              dot={{ fill: colors.secondary, r: 5, strokeWidth: 2, stroke: colors.dotStroke }}
-                              activeDot={{ r: 7 }}
-                              name={analytics.valueCol}
-                            />
-                            <Line 
-                              type="monotone" 
-                              dataKey="value2" 
                               stroke={colors.tertiary} 
                               strokeWidth={3}
                               dot={{ fill: colors.tertiary, r: 5, strokeWidth: 2, stroke: colors.dotStroke }}
                               activeDot={{ r: 7 }}
-                              name={analytics.valueCol2}
+                              name={analytics.volumeLineSeries1Name}
+                            />
+                            <Line 
+                              type="monotone" 
+                              dataKey="value2" 
+                              stroke={colors.secondary} 
+                              strokeWidth={3}
+                              dot={{ fill: colors.secondary, r: 5, strokeWidth: 2, stroke: colors.dotStroke }}
+                              activeDot={{ r: 7 }}
+                              name={analytics.volumeLineSeries2Name}
                             />
                           </LineChart>
                         </ResponsiveContainer>
@@ -579,9 +622,6 @@ export function Analytics() {
                       <p className="font-medium">No time series data available</p>
                       <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
                         Upload data with date/year columns to see trends
-                      </p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                        Check browser console for debug info
                       </p>
                     </div>
                   </div>
@@ -653,10 +693,13 @@ export function Analytics() {
                   <div className="space-y-4">
                     {analytics.topItems.slice(0, 8).map((item, index) => {
                       const maxVal = Math.max(
-                        ...analytics.topItems.map(i => i.value + i.value2)
+                        1,
+                        ...analytics.topItems.map((i) => i.value + i.value2),
                       );
-                      const percent1 = (item.value / maxVal) * 100;
-                      const percent2 = (item.value2 / maxVal) * 100;
+                      const rowTotal = item.value + item.value2;
+                      const rowScalePct = rowTotal > 0 ? (rowTotal / maxVal) * 100 : 0;
+                      const revFlex = Math.max(item.value, 0);
+                      const oiFlex = Math.max(item.value2, 0);
 
                       return (
                         <div key={index}>
@@ -667,15 +710,28 @@ export function Analytics() {
                               <span className="text-green-600 dark:text-green-400 text-xs font-semibold">{item.value2.toLocaleString()}</span>
                             </div>
                           </div>
-                          <div className="flex gap-1 h-7">
+                          {/* Track width vs largest row; inner split = revenue vs other income (Top Year unchanged for CSV). */}
+                          <div className="h-7 w-full rounded-md bg-gray-100 dark:bg-gray-700/50 overflow-hidden">
                             <div
-                              className="bg-gradient-to-r from-cyan-500 to-cyan-400 rounded shadow-sm"
-                              style={{ width: `${percent1}%`, minWidth: percent1 > 5 ? "auto" : "0" }}
-                            ></div>
-                            <div
-                              className="bg-gradient-to-r from-green-500 to-green-400 rounded shadow-sm"
-                              style={{ width: `${percent2}%`, minWidth: percent2 > 5 ? "auto" : "0" }}
-                            ></div>
+                              className="flex h-full rounded-md overflow-hidden shadow-sm"
+                              style={{
+                                width: `${rowScalePct}%`,
+                                minWidth: rowTotal > 0 ? "8px" : undefined,
+                              }}
+                            >
+                              {revFlex > 0 && (
+                                <div
+                                  className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400"
+                                  style={{ flex: revFlex }}
+                                />
+                              )}
+                              {oiFlex > 0 && (
+                                <div
+                                  className="h-full bg-gradient-to-r from-green-500 to-green-400"
+                                  style={{ flex: oiFlex, minWidth: "6px" }}
+                                />
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -707,7 +763,7 @@ export function Analytics() {
                       return "N/A";
                     })()}
                   </p>
-                  <p className="text-gray-500 dark:text-gray-500 text-xs">Based on {analytics.valueCol}</p>
+                  <p className="text-gray-500 dark:text-gray-500 text-xs">Based on {analytics.chartSeries1Name}</p>
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
@@ -756,7 +812,7 @@ export function Analytics() {
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
                 <div className="flex items-center gap-2 mb-6">
                   <TrendingUp className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-                  <h3 className="text-gray-900 dark:text-gray-100 font-semibold text-lg">Trend Analysis - {analytics.valueCol}</h3>
+                  <h3 className="text-gray-900 dark:text-gray-100 font-semibold text-lg">Trend Analysis - {analytics.chartSeries1Name}</h3>
                 </div>
                 <div className="w-full" style={{ height: '400px' }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -790,7 +846,7 @@ export function Analytics() {
                           const item = analytics.timeSeriesData.find((d: any) => d.period === period);
                           return item ? item.fullPeriod : period;
                         }}
-                        formatter={(value: any) => [value.toLocaleString(), analytics.valueCol]}
+                        formatter={(value: any) => [value.toLocaleString(), analytics.chartSeries1Name]}
                       />
                       <Legend wrapperStyle={{ paddingTop: "20px" }} />
                       <Line 
@@ -799,7 +855,7 @@ export function Analytics() {
                         stroke={colors.primary} 
                         strokeWidth={3}
                         dot={{ fill: colors.primary, r: 6 }}
-                        name={analytics.valueCol}
+                        name={analytics.chartSeries1Name}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -887,14 +943,15 @@ export function Analytics() {
                   </div>
                   <p className="text-gray-900 dark:text-gray-100 text-3xl font-bold mb-1">
                     {(() => {
-                      const sorted = Object.values(analytics.topItems.reduce((acc: any, item) => {
+                      const byName = analytics.topItems.reduce<Record<string, number>>((acc, item) => {
                         acc[item.name] = item.value;
                         return acc;
-                      }, {} as Record<string, number>)).sort((a, b) => a - b);
+                      }, {});
+                      const sorted = Object.values(byName).sort((a, b) => a - b);
                       const mid = Math.floor(sorted.length / 2);
                       return sorted.length % 2 === 0
-                        ? Math.round((sorted[mid - 1] + sorted[mid]) / 2).toLocaleString()
-                        : sorted[mid].toLocaleString();
+                        ? Math.round((sorted[mid - 1]! + sorted[mid]!) / 2).toLocaleString()
+                        : sorted[mid]!.toLocaleString();
                     })()}
                   </p>
                   <p className="text-gray-500 dark:text-gray-500 text-xs">Middle value</p>
@@ -1062,9 +1119,21 @@ export function Analytics() {
                             const lastValue = lastPeriod.value1;
                             const growth = firstValue > 0 ? ((lastValue - firstValue) / firstValue * 100) : 0;
                             const totalRevenue = analytics.timeSeriesData.reduce((sum: number, item: any) => sum + item.value1, 0);
+                            const totalOtherIncome = analytics.totalValue2;
+                            const oiShare = totalRevenue > 0 ? ((totalOtherIncome / totalRevenue) * 100).toFixed(1) : "0.0";
+
+                            if (analytics.isLongFactsYearSplit) {
+                              const totalOiTs = analytics.totalExpensesTimeSeries ?? 0;
+                              return `Revenue shows ${growth >= 0 ? "positive" : "negative"} change of ${growth.toFixed(1)}% from ${firstPeriod.name} to ${lastPeriod.name}. Total revenue was ${analytics.currency}${totalRevenue.toLocaleString()}, other income (by year, bars) ${analytics.currency}${totalOtherIncome.toLocaleString()} (~${oiShare}% of revenue), and other income in the Volume over time chart (green line) totals ${analytics.currency}${totalOiTs.toLocaleString()}. ${growth > 20 ? "Strong revenue momentum." : growth > 0 ? "Revenue is trending up." : "Review drivers behind the latest period."}`;
+                            }
+                            if (analytics.isWideCsvYearSplit) {
+                              const totalExTs = analytics.totalExpensesTimeSeries ?? 0;
+                              const oiShareBars = totalRevenue > 0 ? ((totalOtherIncome / totalRevenue) * 100).toFixed(1) : "0.0";
+                              return `Revenue shows ${growth >= 0 ? "positive" : "negative"} change of ${growth.toFixed(1)}% from ${firstPeriod.name} to ${lastPeriod.name}. Total revenue was ${analytics.currency}${totalRevenue.toLocaleString()}, other income (by year, bars) ${analytics.currency}${totalOtherIncome.toLocaleString()} (~${oiShareBars}% of revenue), and expenses in the Volume over time chart (green line) total ${analytics.currency}${totalExTs.toLocaleString()}. ${growth > 20 ? "Strong revenue momentum." : growth > 0 ? "Revenue is trending up." : "Review drivers behind the latest period."}`;
+                            }
+
                             const totalExpense = analytics.timeSeriesData.reduce((sum: number, item: any) => sum + item.value2, 0);
                             const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalExpense) / totalRevenue * 100) : 0;
-                            
                             return `Your business shows ${growth >= 0 ? 'positive' : 'negative'} growth of ${growth.toFixed(1)}% from ${firstPeriod.name} to ${lastPeriod.name}. Total revenue reached ${analytics.currency}${totalRevenue.toLocaleString()} with a profit margin of ${profitMargin.toFixed(1)}%. ${growth > 20 ? 'Exceptional growth trajectory!' : growth > 10 ? 'Strong performance!' : growth > 0 ? 'Steady growth maintained.' : 'Performance needs attention.'}`;
                           })()}
                         </p>
@@ -1086,6 +1155,14 @@ export function Analytics() {
                           <p className="text-sm text-gray-600 dark:text-gray-400">
                             {(() => {
                               const bestPeriod = [...analytics.timeSeriesData].sort((a: any, b: any) => b.value1 - a.value1)[0];
+                              if (analytics.isLongFactsYearSplit) {
+                                const topOi = [...analytics.topItems].sort((a, b) => b.value2 - a.value2)[0];
+                                return `${bestPeriod.fullPeriod} had the highest revenue (${analytics.currency}${bestPeriod.value1.toLocaleString()}) and other income of ${analytics.currency}${bestPeriod.value2.toLocaleString()} in that period (Volume over time).${topOi && topOi.value2 > 0 ? ` Other income was largest in the year bars at ${topOi.name} (${analytics.currency}${topOi.value2.toLocaleString()}).` : ""}`;
+                              }
+                              if (analytics.isWideCsvYearSplit) {
+                                const topOi = [...analytics.topItems].sort((a, b) => b.value2 - a.value2)[0];
+                                return `${bestPeriod.fullPeriod} had the highest revenue (${analytics.currency}${bestPeriod.value1.toLocaleString()}) and expenses of ${analytics.currency}${bestPeriod.value2.toLocaleString()} in that period (Volume over time).${topOi && topOi.value2 > 0 ? ` Other income was largest in the year bars at ${topOi.name} (${analytics.currency}${topOi.value2.toLocaleString()}).` : ""}`;
+                              }
                               const profit = bestPeriod.value1 - bestPeriod.value2;
                               const margin = bestPeriod.value1 > 0 ? ((profit / bestPeriod.value1) * 100) : 0;
                               return `${bestPeriod.name} achieved the highest revenue of ${analytics.currency}${bestPeriod.value1.toLocaleString()} with ${analytics.currency}${profit.toLocaleString()} profit (${margin.toFixed(1)}% margin).`;
@@ -1107,6 +1184,14 @@ export function Analytics() {
                           <p className="text-sm text-gray-600 dark:text-gray-400">
                             {(() => {
                               const worstPeriod = [...analytics.timeSeriesData].sort((a: any, b: any) => a.value1 - b.value1)[0];
+                              if (analytics.isLongFactsYearSplit) {
+                                const lowOi = [...analytics.topItems].sort((a, b) => a.value2 - b.value2)[0];
+                                return `${worstPeriod.fullPeriod} had the lowest revenue (${analytics.currency}${worstPeriod.value1.toLocaleString()}) and other income of ${analytics.currency}${worstPeriod.value2.toLocaleString()} in that period (Volume over time).${lowOi ? ` Smallest other-income bar: ${lowOi.name} (${analytics.currency}${lowOi.value2.toLocaleString()}).` : ""}`;
+                              }
+                              if (analytics.isWideCsvYearSplit) {
+                                const lowOi = [...analytics.topItems].sort((a, b) => a.value2 - b.value2)[0];
+                                return `${worstPeriod.fullPeriod} had the lowest revenue (${analytics.currency}${worstPeriod.value1.toLocaleString()}) and expenses of ${analytics.currency}${worstPeriod.value2.toLocaleString()} in that period (Volume over time).${lowOi ? ` Smallest other-income bar: ${lowOi.name} (${analytics.currency}${lowOi.value2.toLocaleString()}).` : ""}`;
+                              }
                               const profit = worstPeriod.value1 - worstPeriod.value2;
                               const margin = worstPeriod.value1 > 0 ? ((profit / worstPeriod.value1) * 100) : 0;
                               return `${worstPeriod.name} had the lowest revenue of ${analytics.currency}${worstPeriod.value1.toLocaleString()} with ${analytics.currency}${profit.toLocaleString()} profit (${margin.toFixed(1)}% margin).`;
@@ -1156,22 +1241,59 @@ export function Analytics() {
                       </div>
                       <div className="flex-1">
                         <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                          💰 Cost Efficiency
+                          {analytics.isLongFactsYearSplit || analytics.isWideCsvYearSplit
+                            ? "💰 Revenue vs other income (by year)"
+                            : "💰 Cost Efficiency"}
                         </h4>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
                           {(() => {
                             const avgRevenue = analytics.timeSeriesData.reduce((sum: number, d: any) => sum + d.value1, 0) / analytics.timeSeriesData.length;
-                            const avgExpense = analytics.timeSeriesData.reduce((sum: number, d: any) => sum + d.value2, 0) / analytics.timeSeriesData.length;
+                            const avgSecond = analytics.timeSeriesData.reduce((sum: number, d: any) => sum + d.value2, 0) / analytics.timeSeriesData.length;
+
+                            if (analytics.isLongFactsYearSplit) {
+                              const ti = analytics.topItems;
+                              const n = ti.length || 1;
+                              const avgRevBar = ti.reduce((s, i) => s + i.value, 0) / n;
+                              const avgOiBar = ti.reduce((s, i) => s + i.value2, 0) / n;
+                              const avgShare = avgRevBar > 0 ? ((avgOiBar / avgRevBar) * 100).toFixed(1) : "0.0";
+                              const highestOiYear = [...ti].sort((a, b) => b.value2 - a.value2)[0];
+                              const peakShare =
+                                highestOiYear && highestOiYear.value > 0
+                                  ? ((highestOiYear.value2 / highestOiYear.value) * 100).toFixed(1)
+                                  : "0.0";
+                              const avgOiTs = analytics.totalExpensesTimeSeries != null
+                                ? analytics.totalExpensesTimeSeries / analytics.timeSeriesData.length
+                                : 0;
+                              return `By year, average revenue is ${analytics.currency}${Math.round(avgRevBar).toLocaleString()} and average other income is ${analytics.currency}${Math.round(avgOiBar).toLocaleString()} (${avgShare}% of revenue). ${highestOiYear && highestOiYear.value2 > 0 ? `${highestOiYear.name} had the highest other income (${analytics.currency}${highestOiYear.value2.toLocaleString()}, ${peakShare}% of that year’s revenue). ` : ""}Average other income on the Volume over time chart (green line) is about ${analytics.currency}${Math.round(avgOiTs).toLocaleString()} per period.`;
+                            }
+                            if (analytics.isWideCsvYearSplit) {
+                              const ti = analytics.topItems;
+                              const n = ti.length || 1;
+                              const avgRevBar = ti.reduce((s, i) => s + i.value, 0) / n;
+                              const avgOiBar = ti.reduce((s, i) => s + i.value2, 0) / n;
+                              const avgShare = avgRevBar > 0 ? ((avgOiBar / avgRevBar) * 100).toFixed(1) : "0.0";
+                              const highestOiYear = [...ti].sort((a, b) => b.value2 - a.value2)[0];
+                              const peakShare =
+                                highestOiYear && highestOiYear.value > 0
+                                  ? ((highestOiYear.value2 / highestOiYear.value) * 100).toFixed(1)
+                                  : "0.0";
+                              const avgExTs = analytics.totalExpensesTimeSeries != null
+                                ? analytics.totalExpensesTimeSeries / analytics.timeSeriesData.length
+                                : 0;
+                              return `By year, average revenue is ${analytics.currency}${Math.round(avgRevBar).toLocaleString()} and average other income is ${analytics.currency}${Math.round(avgOiBar).toLocaleString()} (${avgShare}% of revenue). ${highestOiYear && highestOiYear.value2 > 0 ? `${highestOiYear.name} had the highest other income (${analytics.currency}${highestOiYear.value2.toLocaleString()}, ${peakShare}% of that year’s revenue). ` : ""}Average expenses on the Volume over time chart (green line) are about ${analytics.currency}${Math.round(avgExTs).toLocaleString()} per period.`;
+                            }
+
+                            const avgExpense = avgSecond;
                             const avgMargin = avgRevenue > 0 ? ((avgRevenue - avgExpense) / avgRevenue * 100) : 0;
-                            
+
                             const mostEfficientPeriod = [...analytics.timeSeriesData].sort((a: any, b: any) => {
                               const marginA = a.value1 > 0 ? ((a.value1 - a.value2) / a.value1) : 0;
                               const marginB = b.value1 > 0 ? ((b.value1 - b.value2) / b.value1) : 0;
                               return marginB - marginA;
                             })[0];
-                            
+
                             const bestMargin = mostEfficientPeriod.value1 > 0 ? ((mostEfficientPeriod.value1 - mostEfficientPeriod.value2) / mostEfficientPeriod.value1 * 100) : 0;
-                            
+
                             return `Average profit margin is ${avgMargin.toFixed(1)}% with average revenue of ${analytics.currency}${avgRevenue.toLocaleString()} and expenses of ${analytics.currency}${avgExpense.toLocaleString()}. ${mostEfficientPeriod.name} achieved the best margin of ${bestMargin.toFixed(1)}%.`;
                           })()}
                         </p>
@@ -1207,7 +1329,8 @@ export function Analytics() {
                             const highAnomalies = anomalies.filter((d: any) => d.value1 > avg);
                             const lowAnomalies = anomalies.filter((d: any) => d.value1 < avg);
                             
-                            return `Detected ${anomalies.length} anomal${anomalies.length > 1 ? 'ies' : 'y'}: ${highAnomalies.length > 0 ? `${highAnomalies.map((a: any) => a.name).join(', ')} showed exceptional performance` : ''}${highAnomalies.length > 0 && lowAnomalies.length > 0 ? ' while ' : ''}${lowAnomalies.length > 0 ? `${lowAnomalies.map((a: any) => a.name).join(', ')} showed below-average performance` : ''}. ${anomalies.length > 2 ? 'Consider investigating factors that caused these variations.' : 'These outliers may indicate seasonal patterns or special events.'}`;
+                            const label = (d: any) => d.fullPeriod ?? d.name ?? d.period;
+                            return `Detected ${anomalies.length} anomal${anomalies.length > 1 ? 'ies' : 'y'}: ${highAnomalies.length > 0 ? `${highAnomalies.map((a: any) => label(a)).join(', ')} showed exceptional performance` : ''}${highAnomalies.length > 0 && lowAnomalies.length > 0 ? ' while ' : ''}${lowAnomalies.length > 0 ? `${lowAnomalies.map((a: any) => label(a)).join(', ')} showed below-average performance` : ''}. ${anomalies.length > 2 ? 'Consider investigating factors that caused these variations.' : 'These outliers may indicate seasonal patterns or special events.'}`;
                           })()}
                         </p>
                       </div>
@@ -1226,30 +1349,63 @@ export function Analytics() {
                         </h4>
                         <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                           {(() => {
-                            const recommendations = [];
+                            const recommendations: string[] = [];
                             const firstPeriod = analytics.timeSeriesData[0];
                             const lastPeriod = analytics.timeSeriesData[analytics.timeSeriesData.length - 1];
                             const growth = firstPeriod.value1 > 0 ? ((lastPeriod.value1 - firstPeriod.value1) / firstPeriod.value1 * 100) : 0;
                             const totalRevenue = analytics.timeSeriesData.reduce((sum: number, item: any) => sum + item.value1, 0);
-                            const totalExpense = analytics.timeSeriesData.reduce((sum: number, item: any) => sum + item.value2, 0);
-                            const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalExpense) / totalRevenue * 100) : 0;
-                            
-                            if (growth < 5) {
-                              recommendations.push(`Focus on growth strategies - current growth rate of ${growth.toFixed(1)}% needs improvement`);
+                            const totalSecond = analytics.timeSeriesData.reduce((sum: number, item: any) => sum + item.value2, 0);
+
+                            if (analytics.isLongFactsYearSplit) {
+                              const totalOI = analytics.totalValue2;
+                              const oiShare = totalRevenue > 0 ? (totalOI / totalRevenue) * 100 : 0;
+                              const totalOiLine = analytics.totalExpensesTimeSeries ?? 0;
+                              if (growth < 5) {
+                                recommendations.push(`Revenue growth is ${growth.toFixed(1)}% across the window — review drivers in weaker years.`);
+                              }
+                              if (oiShare > 15) {
+                                recommendations.push(`Other income is a large share of revenue (~${oiShare.toFixed(1)}%) — confirm classification and recurring vs one-off items.`);
+                              } else if (totalOI === 0 && totalOiLine === 0) {
+                                recommendations.push(`No other-income facts in the dataset — re-upload the PDF after ingest, and ensure the statement includes a line such as “Other income” (now extracted as metric other_income).`);
+                              } else if (totalOI > 0 && totalOiLine === 0) {
+                                recommendations.push(`Other income appears in the year view but sums to zero on the time axis — check that each row’s period/year matches the chart’s date column.`);
+                              }
+                            } else if (analytics.isWideCsvYearSplit) {
+                              const totalOI = analytics.totalValue2;
+                              const oiShare = totalRevenue > 0 ? (totalOI / totalRevenue) * 100 : 0;
+                              const totalExpLine = analytics.totalExpensesTimeSeries ?? 0;
+                              if (growth < 5) {
+                                recommendations.push(`Revenue growth is ${growth.toFixed(1)}% across the window — review drivers in weaker years.`);
+                              }
+                              if (oiShare > 15) {
+                                recommendations.push(`Other income is a large share of revenue in the year bars (~${oiShare.toFixed(1)}%) — confirm classification and recurring vs one-off items.`);
+                              } else if (totalOI === 0) {
+                                recommendations.push(`No other-income columns detected for Top Year — add or rename headers (e.g. “Other income”) so they match non-core revenue rules.`);
+                              }
+                              if (totalExpLine === 0) {
+                                recommendations.push(`No expense columns matched for the Volume over time green line — rename or add a column such as “Total Expenses”.`);
+                              }
+                            } else {
+                              const totalExpense = totalSecond;
+                              const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalExpense) / totalRevenue * 100) : 0;
+
+                              if (growth < 5) {
+                                recommendations.push(`Focus on growth strategies - current growth rate of ${growth.toFixed(1)}% needs improvement`);
+                              }
+
+                              if (profitMargin < 20) {
+                                recommendations.push(`Optimize cost structure - profit margin of ${profitMargin.toFixed(1)}% is below industry standards`);
+                              } else if (profitMargin > 40) {
+                                recommendations.push(`Excellent profitability - consider reinvesting in growth initiatives`);
+                              }
                             }
-                            
-                            if (profitMargin < 20) {
-                              recommendations.push(`Optimize cost structure - profit margin of ${profitMargin.toFixed(1)}% is below industry standards`);
-                            } else if (profitMargin > 40) {
-                              recommendations.push(`Excellent profitability - consider reinvesting in growth initiatives`);
-                            }
-                            
+
                             const worstPeriod = [...analytics.timeSeriesData].sort((a: any, b: any) => a.value1 - b.value1)[0];
-                            recommendations.push(`Investigate factors that affected performance in ${worstPeriod.name} to prevent similar downturns`);
-                            
+                            recommendations.push(`Investigate factors that affected performance in ${worstPeriod.fullPeriod ?? worstPeriod.period} to prevent similar downturns`);
+
                             const bestPeriod = [...analytics.timeSeriesData].sort((a: any, b: any) => b.value1 - a.value1)[0];
-                            recommendations.push(`Replicate success factors from ${bestPeriod.name} in future periods`);
-                            
+                            recommendations.push(`Replicate success factors from ${bestPeriod.fullPeriod ?? bestPeriod.period} in future periods`);
+
                             return recommendations.map((rec, idx) => (
                               <li key={idx} className="flex items-start gap-2">
                                 <span className="text-indigo-600 dark:text-indigo-400 mt-0.5">•</span>

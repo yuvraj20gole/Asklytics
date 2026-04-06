@@ -25,6 +25,7 @@ export function Login() {
     try {
       const res = await apiLogin(formData.email.trim(), formData.password);
       setToken(res.access_token);
+      localStorage.setItem("asklytics_company", formData.email.trim());
       navigate("/welcome");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");

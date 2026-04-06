@@ -1,0 +1,20 @@
+{
+  "label_to_id": {
+    "O": 0,
+    "YEAR": 1,
+    "VALUE": 2,
+    "METRIC": 3
+  },
+  "id_to_label": {
+    "0": "O",
+    "1": "YEAR",
+    "2": "VALUE",
+    "3": "METRIC"
+  },
+  "labels": [
+    "O",
+    "YEAR",
+    "VALUE",
+    "METRIC"
+  ]
+}

@@ -1,9 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
-import { User, Mail, Lock, Save, Moon, Sun } from "lucide-react";
+import { User, Mail, Lock, Save, LogOut } from "lucide-react";
 import { useTheme } from "../contexts/theme-context";
+import { setToken } from "@/lib/auth";
 
 export function Settings() {
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   
   // Load saved data from localStorage on mount
@@ -69,6 +72,16 @@ export function Settings() {
     const newPreferences = { ...preferences, [key]: !preferences[key] };
     setPreferences(newPreferences);
     localStorage.setItem("asklytics_preferences", JSON.stringify(newPreferences));
+  };
+
+  const handleLogout = () => {
+    setToken(null);
+    try {
+      localStorage.removeItem("asklytics_company");
+    } catch {
+      // ignore
+    }
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -271,6 +284,22 @@ export function Settings() {
                 </label>
               </div>
             </div>
+          </div>
+
+          {/* Session */}
+          <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+            <h3 className="mb-2">Session</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Sign out of Asklytics on this device. You will need to log in again to use the app.
+            </p>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg border border-destructive/60 text-destructive bg-background hover:bg-destructive/10 transition-colors font-medium"
+            >
+              <LogOut className="w-4 h-4" />
+              Log out
+            </button>
           </div>
         </div>
       </div>

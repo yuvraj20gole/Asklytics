@@ -20,19 +20,23 @@ _configure_ssl_for_https_downloads()
 # Initialize once (important for performance)
 reader = easyocr.Reader(["en"], gpu=False)
 
-# Minimum confidence to keep a detection (ignore weaker boxes)
+# Default minimum confidence to keep a detection (ignore weaker boxes)
 MIN_CONFIDENCE = 0.5
 
 
-def extract_text_with_boxes(image):
-    logger.info("[OCR START] Running EasyOCR")
+def extract_text_with_boxes(image, min_confidence: float | None = None):
+    """
+    Run EasyOCR. If min_confidence is None, uses MIN_CONFIDENCE (0.5).
+    """
+    floor = MIN_CONFIDENCE if min_confidence is None else float(min_confidence)
+    logger.info("[OCR START] Running EasyOCR (min_confidence=%.2f)", floor)
 
     results = reader.readtext(image)
 
     extracted = []
 
     for (bbox, text, confidence) in results:
-        if confidence < MIN_CONFIDENCE:
+        if confidence < floor:
             logger.info(
                 "[OCR SKIP] Low confidence=%.4f text=%r bbox=%s",
                 confidence,
@@ -49,7 +53,7 @@ def extract_text_with_boxes(image):
             }
         )
 
-    logger.info("[OCR DONE] Extracted %d items (after confidence >= %.2f filter)", len(extracted), MIN_CONFIDENCE)
+    logger.info("[OCR DONE] Extracted %d items (after confidence >= %.2f filter)", len(extracted), floor)
 
     if not extracted:
         raw_texts = [t for (_, t, _) in results]

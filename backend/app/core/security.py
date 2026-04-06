@@ -33,7 +33,8 @@ def create_access_token(subject: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.access_token_expire_minutes
     )
-    payload = {"sub": subject, "exp": expire}
+    # NumericDate (Unix seconds) — avoids library quirks with datetime objects in claims.
+    payload = {"sub": subject, "exp": int(expire.timestamp())}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 

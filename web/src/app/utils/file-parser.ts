@@ -39,14 +39,17 @@ function processRows(rawRows: any[]): DataRow[] {
       
       const strValue = String(value).trim();
       
-      // Remove currency symbols and commas before checking if it's a number
-      const cleanValue = strValue.replace(/[$,€£¥]/g, "");
+      // Remove currency symbols, commas, and common INR prefixes before parsing numbers
+      const cleanValue = strValue
+        .replace(/[$,€£¥₹]/g, "")
+        .replace(/^rs\.?\s*/i, "")
+        .replace(/\s+/g, "");
       
       // Try to convert to number if it looks like a number
       if (cleanValue && !isNaN(Number(cleanValue))) {
         processed[key] = Number(cleanValue);
       } else {
-        processed[key] = value;
+        processed[key] = strValue;
       }
     }
     return processed;
@@ -130,13 +133,17 @@ async function parseCSV(file: File): Promise<ParseResult> {
           }
 
           const { headerRow, dataRows } = firstSectionData;
-          
-          // Convert to objects
-          const columns = headerRow.map(col => col.trim());
-          const rows = dataRows.map(row => {
-            const obj: any = {};
-            headerRow.forEach((header, idx) => {
-              obj[header.trim()] = row[idx] || "";
+
+          const trimmedHeaders = headerRow.map((col) => (col ?? "").trim());
+          const columns = uniquifyHeaders(trimmedHeaders);
+          const headerLen = headerRow.length;
+
+          const rows = dataRows.map((row) => {
+            const padded = padRowToLength(row, headerLen);
+            const obj: Record<string, string> = {};
+            columns.forEach((colName, idx) => {
+              const cell = padded[idx];
+              obj[colName] = cell !== undefined && cell !== null ? String(cell) : "";
             });
             return obj;
           });
@@ -318,6 +325,23 @@ async function parseJSON(file: File): Promise<ParseResult> {
 
     reader.readAsText(file);
   });
+}
+
+/** Avoid duplicate keys overwriting cells; align with row indices. */
+function uniquifyHeaders(headers: string[]): string[] {
+  const counts = new Map<string, number>();
+  return headers.map((raw, i) => {
+    const base = (raw ?? "").trim() || `Column_${i + 1}`;
+    const n = (counts.get(base) ?? 0) + 1;
+    counts.set(base, n);
+    return n === 1 ? base : `${base}_${n}`;
+  });
+}
+
+function padRowToLength(row: string[], len: number): string[] {
+  const out = row.slice();
+  while (out.length < len) out.push("");
+  return out;
 }
 
 // NEW: Find the first valid data section in a multi-section CSV

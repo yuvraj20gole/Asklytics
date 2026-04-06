@@ -1,14 +1,8 @@
-import type { DataRow } from "../types/data";
+import type { DataRow, QueryResult } from "../types/data";
+import { isFinancialFactsLayout } from "./analytics-infer";
+import { executeCsvFinancialFormulas, canUseCsvFormulaEngine } from "./financial-formulas-csv";
 
-export interface QueryResult {
-  sql: string;
-  table: DataRow[];
-  chartData: Array<{ name: string; [key: string]: any }>; // Support multiple metrics
-  message: string;
-  chartType?: "line" | "bar" | "multi-line" | "multi-bar"; // Support multi-metric charts
-  insight?: string; // AI-generated insight
-  metrics?: string[]; // List of metrics being displayed
-}
+export type { QueryResult } from "../types/data";
 
 // Detect currency from data - FORCE INR for consistency
 function detectCurrency(data: DataRow[]): string {
@@ -18,7 +12,19 @@ function detectCurrency(data: DataRow[]): string {
 
 // Financial keywords mapping
 const FINANCIAL_KEYWORDS: Record<string, string[]> = {
-  profit: ["profit", "net income", "earnings", "net profit", "pbt", "profit before tax"],
+  /** Longer / net-profit phrases first so `findBestColumn` does not pick PBT before PAT. */
+  profit: [
+    "profit after tax",
+    "pat",
+    "p.a.t",
+    "profit for the year",
+    "net profit",
+    "net income",
+    "earnings",
+    "profit before tax",
+    "pbt",
+    "profit",
+  ],
   revenue: ["revenue", "sales", "income", "turnover", "receipts", "operations"],
   expense: ["expense", "cost", "expenditure", "spending", "outlay", "cost of", "operating expense"],
   tax: ["tax", "taxation", "income tax"],
@@ -62,6 +68,65 @@ function findBestColumn(columns: string[], keywords: string[]): string | null {
   }
   
   return null;
+}
+
+/** Match EBITDA / common typos / EBIT / India PBIDT–style headers in wide financial CSVs. */
+function findEbitdaLikeColumn(columns: string[]): string | null {
+  const score = (raw: string): number => {
+    const lc = raw.toLowerCase().trim().replace(/^\ufeff/, "");
+    const letters = lc.replace(/[^a-z]/g, "");
+    if (lc.includes("ebitda") || letters.includes("ebitda")) return 4;
+    if (
+      lc.includes("ebita") ||
+      letters.includes("ebita") ||
+      letters.includes("ebidta") ||
+      letters.includes("ebdita")
+    )
+      return 3;
+    if (/\bebit\b/.test(lc) || /(^|[^a-z])ebit([^a-z]|$)/.test(lc)) return 2;
+    if (
+      letters.includes("pbidt") ||
+      letters.includes("oibda") ||
+      letters.includes("pbitda") ||
+      letters.includes("pbdt")
+    )
+      return 2;
+    if (letters === "editda") return 3;
+    if (
+      lc.includes("depreciation") &&
+      (lc.includes("amortization") || lc.includes("amortisation")) &&
+      (lc.includes("interest") || lc.includes("tax") || lc.includes("finance cost")) &&
+      (lc.includes("before") || lc.includes("earnings"))
+    )
+      return 2;
+    return 0;
+  };
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const col of columns) {
+    const s = score(col);
+    if (s > bestScore) {
+      bestScore = s;
+      best = col;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+function groupBySumTwoMetrics(
+  data: DataRow[],
+  groupCol: string,
+  colA: string,
+  colB: string
+): Record<string, { a: number; b: number }> {
+  const groups: Record<string, { a: number; b: number }> = {};
+  for (const row of data) {
+    const key = String(row[groupCol] ?? "");
+    if (!groups[key]) groups[key] = { a: 0, b: 0 };
+    groups[key].a += Number(row[colA]) || 0;
+    groups[key].b += Number(row[colB]) || 0;
+  }
+  return groups;
 }
 
 function isNumericColumn(data: DataRow[], column: string): boolean {
@@ -111,12 +176,484 @@ function findYearColumn(data: DataRow[], columns: string[]): string | null {
   return null;
 }
 
+/** Long `year` / `metric` / `value` ingest: filter by metric slug, not by column name. */
+function longFactsMetricSlug(m: unknown): string {
+  return String(m ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+function longFactsIsOperatingRevenue(m: unknown): boolean {
+  const t = longFactsMetricSlug(m);
+  if (!t) return false;
+  if (t.includes("total_income") || t.includes("total-income")) return false;
+  if (t.includes("totalincome")) return false;
+  if (t.includes("other_income") || t.includes("other-income")) return false;
+  if (t === "revenue" || t.includes("revenue_from") || (t.includes("revenue") && !t.includes("other"))) return true;
+  return false;
+}
+
+function longFactsIsNetProfit(m: unknown): boolean {
+  const t = String(m ?? "").toLowerCase();
+  if (t.includes("net profit") || t.includes("net_profit")) return true;
+  if (t.includes("profit after tax") || /\bpat\b/.test(t)) return true;
+  if (t.includes("net income") || t.includes("net_income")) return true;
+  if (t.trim().toLowerCase() === "profit") return true;
+  return false;
+}
+
+function longFactsIsTotalExpenses(m: unknown): boolean {
+  const t = String(m ?? "").toLowerCase();
+  return t.includes("total expense") || t.includes("total_expense") || t === "expenses" || t === "expense";
+}
+
+function longFactsIsTotalIncome(m: unknown): boolean {
+  const t = String(m ?? "").toLowerCase();
+  return t.includes("total income") || t.includes("total_income");
+}
+
+function longFactsIsOtherIncome(m: unknown): boolean {
+  const t = String(m ?? "").toLowerCase();
+  return t.includes("other income") || t.includes("other_income");
+}
+
+function longFactsPick(
+  data: DataRow[],
+  yearCol: string,
+  metricCol: string,
+  valueCol: string,
+  pred: (m: unknown) => boolean,
+): { year: number; value: number }[] {
+  const out: { year: number; value: number }[] = [];
+  for (const row of data) {
+    if (!pred(row[metricCol])) continue;
+    const y = Number(row[yearCol]);
+    const v = Number(row[valueCol]);
+    if (!Number.isFinite(y) || !Number.isFinite(v)) continue;
+    out.push({ year: y, value: v });
+  }
+  out.sort((a, b) => a.year - b.year);
+  return out;
+}
+
+/**
+ * Image ingest often stores one wrong `metric`/`value` per year while `raw` still has the full
+ * wide row: `2019 385672 5328 391000 347000 32500 49.62`
+ */
+type ApexStyleWideParsed = {
+  year: number;
+  revenue: number;
+  other_income: number;
+  total_income: number;
+  total_expenses: number;
+  net_profit: number;
+  eps?: number;
+};
+
+function parseWideFinancialRaw(raw: string): ApexStyleWideParsed | null {
+  const t = String(raw ?? "").trim();
+  const m = t.match(/^(\d{4})\s+(.+)$/);
+  if (!m) return null;
+  const year = parseInt(m[1], 10);
+  if (!Number.isFinite(year) || year < 1990 || year > 2100) return null;
+  const tokens = m[2]!.trim().split(/\s+/);
+  const nums: number[] = [];
+  for (const tok of tokens) {
+    const clean = tok.replace(/,/g, "");
+    if (!/^\d+(\.\d+)?$/.test(clean)) continue;
+    nums.push(parseFloat(clean));
+  }
+  if (nums.length < 4) return null;
+  let eps: number | undefined;
+  if (nums.length >= 2 && nums[nums.length - 1]! < 500) {
+    eps = nums.pop()!;
+  }
+  if (nums.length < 4) return null;
+  let revenue: number;
+  let other_income: number;
+  let total_income: number;
+  let total_expenses: number;
+  let net_profit: number;
+  if (nums.length >= 5) {
+    revenue = nums[0]!;
+    other_income = nums[1]!;
+    total_income = nums[2]!;
+    total_expenses = nums[3]!;
+    net_profit = nums[4]!;
+  } else {
+    revenue = nums[0]!;
+    other_income = nums[1]!;
+    total_expenses = nums[2]!;
+    net_profit = nums[3]!;
+    total_income = revenue + other_income;
+  }
+  return { year, revenue, other_income, total_income, total_expenses, net_profit, eps };
+}
+
+function apexSeriesFromLongFactRows(data: DataRow[], rawCol: string): ApexStyleWideParsed[] {
+  const byYear = new Map<number, ApexStyleWideParsed>();
+  for (const row of data) {
+    const p = parseWideFinancialRaw(String(row[rawCol] ?? ""));
+    if (!p) continue;
+    if (!byYear.has(p.year)) byYear.set(p.year, p);
+  }
+  return [...byYear.values()].sort((a, b) => a.year - b.year);
+}
+
+/**
+ * Structured Q&A for ingested long facts (PDF/image rows). Avoids grouping `value` across all metrics.
+ */
+function executeLongFactsStructuredQuery(
+  userInput: string,
+  data: DataRow[],
+  columns: string[],
+): QueryResult | null {
+  if (!isFinancialFactsLayout(columns) || data.length === 0) return null;
+
+  const yearCol = columns.find((c) => /^year$/i.test(c));
+  const metricCol = columns.find((c) => /^metric$/i.test(c));
+  const valueCol = columns.find((c) => /^value$/i.test(c));
+  const rawCol = columns.find((c) => /^raw$/i.test(c));
+  if (!yearCol || !metricCol || !valueCol) return null;
+
+  const lower = userInput.toLowerCase();
+  const cur = detectCurrency(data);
+
+  const apex = rawCol ? apexSeriesFromLongFactRows(data, rawCol) : [];
+  const apexOk = apex.length >= 2;
+
+  const twoYearRange = lower.match(/\bfrom\s+(20\d{2})\s+to\s+(20\d{2})\b/);
+
+  const asksOtherIncomeRatio =
+    /other\s+income/.test(lower) &&
+    (lower.includes("%") || lower.includes("percent") || lower.includes("ratio"));
+
+  const asksExpensePctOfTotalIncome =
+    (lower.includes("total expense") || lower.includes("expenses")) &&
+    lower.includes("total income") &&
+    (lower.includes("%") || lower.includes("percent") || lower.includes("ratio") || lower.includes("of"));
+
+  const asksDatasetMetricList =
+    (/\blist\b/.test(lower) || /\bshow\b/.test(lower) || /^\s*what\s+(are|is)\s+/i.test(userInput)) &&
+    /\bmetrics?\b/.test(lower) &&
+    /\b(in\s+(the\s+)?data|upload|uploaded|file|dataset)\b/.test(lower) &&
+    !/\bratio\b/.test(lower) &&
+    !/\bkpi\s+dashboard\b/.test(lower);
+
+  if (asksDatasetMetricList) {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const row of data) {
+      const m = String(row[metricCol] ?? "").trim();
+      if (!m || seen.has(m)) continue;
+      seen.add(m);
+      ordered.push(m);
+    }
+    const sql = `SELECT DISTINCT ${metricCol} FROM uploaded_data ORDER BY ${metricCol};`;
+    return {
+      sql,
+      table: ordered.map((m) => ({ Metric: m })),
+      chartData: [],
+      message: `**${ordered.length}** distinct metric value(s) in this upload.`,
+      chartType: "bar",
+      insight: ordered.length ? ordered.join(", ") : "No rows in the metric column.",
+    };
+  }
+
+  // --- Operating revenue vs total expenses (wide `raw`); before expenses-only "by year" branch ---
+  const asksRevenueVsExpenses =
+    apexOk &&
+    /\brevenue\b/.test(lower) &&
+    /\bexpenses?\b/.test(lower) &&
+    (/\bvs\b|\bversus\b|\bcompare\b/.test(lower) ||
+      (/\band\b/.test(lower) && /\bby\s+year\b/.test(lower)));
+  if (asksRevenueVsExpenses) {
+    const rows: DataRow[] = apex.map((p) => ({
+      Year: p.year,
+      Revenue: p.revenue,
+      "Total expenses": p.total_expenses,
+    }));
+    return {
+      sql: `-- Operating revenue vs total expenses from parsed \`raw\` (wide P&L rows)`,
+      table: rows,
+      chartData: rows.map((row) => ({
+        name: String(row.Year),
+        revenue: row.Revenue as number,
+        expenses: row["Total expenses"] as number,
+      })),
+      message: `Operating **revenue** vs **total expenses** by year (${rows.length} periods).`,
+      chartType: "multi-bar",
+      insight:
+        "Revenue = first amount after year; expenses = 4th money column in each `raw` row. Net profit and other columns are not shown here.",
+      metrics: ["revenue", "expenses"],
+    };
+  }
+
+  // --- Combined: other income % of revenue AND expenses % of total income ---
+  if (asksOtherIncomeRatio && asksExpensePctOfTotalIncome && apexOk) {
+    const rows: DataRow[] = apex.map((p) => ({
+      Year: p.year,
+      "Other income % of revenue":
+        p.revenue !== 0 ? Math.round((10000 * p.other_income) / p.revenue) / 100 : "—",
+      "Expenses % of total income":
+        p.total_income !== 0 ? Math.round((10000 * p.total_expenses) / p.total_income) / 100 : "—",
+    }));
+    const sql =
+      `-- Parsed wide rows from \`raw\` (Year, Rev, OI, TI, Exp, PAT, EPS)\nSELECT * FROM uploaded_data;`;
+    return {
+      sql,
+      table: rows,
+      chartData: rows.map((row) => ({
+        name: String(row.Year),
+        sales: (row["Other income % of revenue"] as number) ?? 0,
+      })),
+      message:
+        "Other income as % of **operating revenue**, and total expenses as % of **total income**, by year (from parsed `raw` rows).",
+      chartType: "line",
+      chartValueFormat: "percent",
+      insight: "Second metric is in the table; chart highlights other-income %.",
+    };
+  }
+
+  // --- Revenue % change (must not steal "other income % of revenue") ---
+  const asksRevenueDelta =
+    !asksOtherIncomeRatio &&
+    /\brevenue\b|\bsales\b|\bturnover\b/.test(lower) &&
+    (lower.includes("change") ||
+      lower.includes("growth") ||
+      twoYearRange != null ||
+      /\bfrom\s+20\d{2}\s+to\s+20\d{2}/.test(lower));
+
+  if (asksRevenueDelta) {
+    const series = apexOk
+      ? apex.map((p) => ({ year: p.year, value: p.revenue }))
+      : longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsOperatingRevenue);
+    if (series.length < 1) return null;
+    const yA = twoYearRange ? parseInt(twoYearRange[1], 10) : series[0].year;
+    const yB = twoYearRange ? parseInt(twoYearRange[2], 10) : series[series.length - 1].year;
+    const va = series.find((x) => x.year === yA)?.value;
+    const vb = series.find((x) => x.year === yB)?.value;
+    if (va == null || vb == null || va === 0) return null;
+    const pct = ((vb - va) / va) * 100;
+    const sql = apexOk
+      ? `-- Operating revenue from parsed \`raw\` wide rows (${yA} vs ${yB})`
+      : `-- Long facts: operating revenue for ${yA} vs ${yB}\nSELECT ${yearCol}, ${metricCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(${metricCol}) LIKE '%revenue%' AND LOWER(${metricCol}) NOT LIKE '%other%'\n  AND LOWER(${metricCol}) NOT LIKE '%total_income%'\n  AND ${yearCol} IN (${yA}, ${yB});`;
+    return {
+      sql,
+      table: [
+        { Year: yA, Revenue: va },
+        { Year: yB, Revenue: vb },
+        { "Δ %": `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%` },
+      ],
+      chartData: [
+        { name: String(yA), sales: va },
+        { name: String(yB), sales: vb },
+      ],
+      message: `Revenue changed from ${cur}${va.toLocaleString()} (${yA}) to ${cur}${vb.toLocaleString()} (${yB}), **${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%** overall.`,
+      chartType: "bar",
+      insight: apexOk
+        ? "Uses **first numeric column** after the year in each `raw` row (operating revenue), not the stored `value` field."
+        : `End-to-end change across the period: ${pct.toFixed(1)}% ${pct >= 0 ? "growth" : "decline"}.`,
+    };
+  }
+
+  if (
+    (lower.includes("highest") || lower.includes("lowest") || lower.includes("which year") || lower.includes("what year")) &&
+    (lower.includes("net profit") || lower.includes("net income") || /\bpat\b/.test(lower))
+  ) {
+    let series = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsNetProfit);
+    if (series.length < 1 && apexOk) {
+      series = apex.map((p) => ({ year: p.year, value: p.net_profit }));
+    }
+    if (series.length < 1) return null;
+    const best = series.reduce((a, b) => (a.value >= b.value ? a : b));
+    const worst = series.reduce((a, b) => (a.value <= b.value ? a : b));
+    let wantHigh = lower.includes("highest") || lower.includes("maximum") || lower.includes("best");
+    let wantLow = lower.includes("lowest") || lower.includes("minimum") || lower.includes("worst");
+    if (!wantHigh && !wantLow) wantHigh = true;
+    const sql = `-- Long facts: net profit by year\nSELECT ${yearCol}, ${metricCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%net%profit%'\n   OR LOWER(CAST(${metricCol} AS TEXT)) LIKE '%net_income%'\n   OR LOWER(CAST(${metricCol} AS TEXT)) LIKE '%pat%';`;
+    if (wantHigh && wantLow) {
+      return {
+        sql,
+        table: [
+          { Kind: "Highest", Year: best.year, "Net profit": best.value },
+          { Kind: "Lowest", Year: worst.year, "Net profit": worst.value },
+        ],
+        chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
+        message: `**Highest** net profit: **${best.year}** (${cur}${best.value.toLocaleString()}). **Lowest**: **${worst.year}** (${cur}${worst.value.toLocaleString()}).`,
+        chartType: "line",
+        insight: `Full series spans ${series.length} years.`,
+      };
+    }
+    const pick = wantLow ? worst : best;
+    return {
+      sql,
+      table: [{ Year: pick.year, "Net profit": pick.value }],
+      chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
+      message: `${wantLow ? "Lowest" : "Highest"} net profit is **${pick.year}** at ${cur}${pick.value.toLocaleString()}.`,
+      chartType: "line",
+      insight: `Range: ${cur}${worst.value.toLocaleString()} (${worst.year}) to ${cur}${best.value.toLocaleString()} (${best.year}).`,
+    };
+  }
+
+  // --- Total expenses trend by year ---
+  if (
+    longFactsIsTotalExpenses("total expenses") &&
+    (lower.includes("expense") || lower.includes("expenses")) &&
+    (lower.includes("trend") ||
+      lower.includes("over the") ||
+      lower.includes("each year") ||
+      lower.includes("every year") ||
+      lower.includes("by year") ||
+      lower.includes("plot") ||
+      lower.includes("describe") ||
+      lower.includes("chart"))
+  ) {
+    let series = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsTotalExpenses);
+    if (series.length < 1 && apexOk) {
+      series = apex.map((p) => ({ year: p.year, value: p.total_expenses }));
+    }
+    if (series.length < 1) return null;
+    const sql = apexOk
+      ? `-- Total expenses from parsed \`raw\` (4th numeric column in wide P&L row)`
+      : `-- Long facts: total expenses by year\nSELECT ${yearCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%expense%'\nORDER BY ${yearCol};`;
+    return {
+      sql,
+      table: series.map((s) => ({ Year: s.year, "Total expenses": s.value })),
+      chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
+      message: `Total expenses by year (${series.length} periods).`,
+      chartType: "line",
+      insight: `From ${cur}${series[0].value.toLocaleString()} (${series[0].year}) to ${cur}${series[series.length - 1].value.toLocaleString()} (${series[series.length - 1].year}).`,
+    };
+  }
+
+  // --- Other income % of (operating) revenue ---
+  if (asksOtherIncomeRatio && !asksExpensePctOfTotalIncome) {
+    if (apexOk) {
+      const rows: DataRow[] = apex.map((p) => ({
+        Year: p.year,
+        "Other income": p.other_income,
+        Revenue: p.revenue,
+        "Other income % of revenue":
+          p.revenue !== 0 ? Math.round((10000 * p.other_income) / p.revenue) / 100 : "—",
+      }));
+      const sql = `-- From parsed \`raw\`: other_income / revenue`;
+      return {
+        sql,
+        table: rows,
+        chartData: rows.map((row) => ({
+          name: String(row.Year),
+          sales: (row["Other income % of revenue"] as number) ?? 0,
+        })),
+        message: `Other income as % of operating revenue, by year.`,
+        chartType: "line",
+        chartValueFormat: "percent",
+        insight: "Parsed from wide `raw` rows (columns 2 and 1 after year).",
+      };
+    }
+    const rev = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsOperatingRevenue);
+    const oi = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsOtherIncome);
+    if (rev.length < 1 || oi.length < 1) return null;
+    const oiByYear = new Map(oi.map((x) => [x.year, x.value]));
+    const rows: DataRow[] = [];
+    for (const r of rev) {
+      const o = oiByYear.get(r.year);
+      if (o == null || r.value === 0) continue;
+      rows.push({
+        Year: r.year,
+        "Other income": o,
+        Revenue: r.value,
+        "Other income % of revenue": Math.round((10000 * o) / r.value) / 100,
+      });
+    }
+    if (!rows.length) return null;
+    const sql = `-- Long facts: other_income / revenue per year\n-- (filter metric in app)`;
+    return {
+      sql,
+      table: rows,
+      chartData: rows.map((row) => ({
+        name: String(row.Year),
+        sales: row["Other income % of revenue"] as number,
+      })),
+      message: `Other income as % of operating revenue, by year.`,
+      chartType: "line",
+      chartValueFormat: "percent",
+      insight: "Uses **revenue** (operating) as denominator, not total income.",
+    };
+  }
+
+  // --- Total expenses % of total income ---
+  if (asksExpensePctOfTotalIncome && !asksOtherIncomeRatio) {
+    if (apexOk) {
+      const rows: DataRow[] = apex.map((p) => ({
+        Year: p.year,
+        "Total income": p.total_income,
+        "Total expenses": p.total_expenses,
+        "Expenses % of total income":
+          p.total_income !== 0 ? Math.round((10000 * p.total_expenses) / p.total_income) / 100 : "—",
+      }));
+      return {
+        sql: `-- From parsed \`raw\`: total_expenses / total_income`,
+        table: rows,
+        chartData: rows.map((row) => ({
+          name: String(row.Year),
+          sales: (row["Expenses % of total income"] as number) ?? 0,
+        })),
+        message: `Total expenses as % of total income, by year.`,
+        chartType: "line",
+        chartValueFormat: "percent",
+        insight: "Parsed from wide `raw` rows.",
+      };
+    }
+    const ti = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsTotalIncome);
+    const ex = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsTotalExpenses);
+    if (ti.length < 1 || ex.length < 1) return null;
+    const exByYear = new Map(ex.map((x) => [x.year, x.value]));
+    const rows: DataRow[] = [];
+    for (const t of ti) {
+      const e = exByYear.get(t.year);
+      if (e == null || t.value === 0) continue;
+      rows.push({
+        Year: t.year,
+        "Total income": t.value,
+        "Total expenses": e,
+        "Expenses % of total income": Math.round((10000 * e) / t.value) / 100,
+      });
+    }
+    if (!rows.length) return null;
+    const sql = `-- Long facts: total_expenses / total_income per year`;
+    return {
+      sql,
+      table: rows,
+      chartData: rows.map((row) => ({
+        name: String(row.Year),
+        sales: row["Expenses % of total income"] as number,
+      })),
+      message: `Total expenses as % of total income, by year.`,
+      chartType: "line",
+      chartValueFormat: "percent",
+      insight: "Lower % generally means more income retained before tax items.",
+    };
+  }
+
+  return null;
+}
+
 export function executeQuery(
   userInput: string,
   data: DataRow[],
   columns: string[]
 ): QueryResult {
   const lowerInput = userInput.toLowerCase();
+
+  if (canUseCsvFormulaEngine(columns, data)) {
+    const formulaHit = executeCsvFinancialFormulas(userInput, data, columns);
+    if (formulaHit) return formulaHit;
+  }
+
+  const longFactsHit = executeLongFactsStructuredQuery(userInput, data, columns);
+  if (longFactsHit) return longFactsHit;
 
   // Categorize columns
   const numericColumns = columns.filter((col) => isNumericColumn(data, col));
@@ -168,9 +705,14 @@ export function executeQuery(
                       lowerInput.includes("yoy") || lowerInput.includes("y-o-y") ||
                       lowerInput.includes("year over year") || lowerInput.includes("year-over-year") ||
                       lowerInput.includes("trend %") || lowerInput.includes("growth %");
-  const wantsSummary = lowerInput.includes("summary") || lowerInput.includes("complete") || 
-                       lowerInput.includes("overall") || lowerInput.includes("full picture") ||
-                       lowerInput.includes("everything") || lowerInput.includes("all metrics");
+  const wantsSummary =
+    lowerInput.includes("summary") ||
+    lowerInput.includes("complete") ||
+    lowerInput.includes("overall") ||
+    lowerInput.includes("full picture") ||
+    lowerInput.includes("everything") ||
+    (/\ball metrics\b/.test(lowerInput) &&
+      /\b(financial|ratio|ratios|kpi|overview|dashboard)\b/.test(lowerInput));
   const wantsInsight = lowerInput.includes("why") || lowerInput.includes("analyze") || 
                        lowerInput.includes("analysis") || lowerInput.includes("explain") ||
                        lowerInput.includes("best") || lowerInput.includes("worst");
@@ -203,9 +745,20 @@ export function executeQuery(
   let valueColumn: string | null = null;
   let groupColumn: string | null = null;
 
-  // Priority 1: Find columns mentioned in the query
+  const asksEbitLine =
+    lowerInput.includes("ebitda") ||
+    lowerInput.includes("ebita") ||
+    /\bebit\b/.test(lowerInput);
+  const ebitMeasureCol = asksEbitLine ? findEbitdaLikeColumn(columns) : null;
+  if (ebitMeasureCol) {
+    valueColumn = ebitMeasureCol;
+  }
+
+  // Priority 1: Find columns mentioned in the query (skip EBITDA measure col — non-numeric ₹ cells
+  // were wrongly treated as a grouping dimension)
   for (const col of columns) {
-    const colLower = col.toLowerCase();
+    if (ebitMeasureCol !== null && col === ebitMeasureCol) continue;
+    const colLower = col.toLowerCase().trim().replace(/^\ufeff/, "");
     if (lowerInput.includes(colLower)) {
       if (isNumericColumn(data, col) && !isYearColumn(col) && !valueColumn) {
         valueColumn = col;
@@ -222,7 +775,7 @@ export function executeQuery(
     if (mentionsLoss) {
       valueColumn = findBestColumn(columns, FINANCIAL_KEYWORDS.loss) || 
                     findBestColumn(columns, FINANCIAL_KEYWORDS.expense);
-    } else if (mentionsProfit) {
+    } else if (mentionsProfit && !wantsMargin) {
       valueColumn = findBestColumn(columns, FINANCIAL_KEYWORDS.profit);
     } else if (mentionsRevenue) {
       valueColumn = findBestColumn(columns, FINANCIAL_KEYWORDS.revenue);
@@ -279,6 +832,17 @@ export function executeQuery(
 
   // Handle special case: simple total without grouping
   if (wantsTotal && !wantsGrouping && valueColumn) {
+    if (isFinancialFactsLayout(columns)) {
+      return {
+        sql: `-- Long facts: do not SUM(value) across mixed metrics; filter by metric first.`,
+        table: data.slice(0, 20),
+        chartData: [],
+        message:
+          "Your upload is **year / metric / value** rows. Asking for a single “total” would add revenue, expenses, and profit together. Ask for a **specific metric** (e.g. total revenue by year) or use **Analytics**.",
+        chartType: "bar",
+        insight: "Tip: e.g. “Total expenses by year” or “Other income % of revenue”.",
+      };
+    }
     const total = data.reduce((sum, row) => sum + (Number(row[valueColumn!]) || 0), 0);
     
     const results = [{ metric: "Total", value: total }];
@@ -429,11 +993,12 @@ export function executeQuery(
     const expenseCol = findBestColumn(columns, FINANCIAL_KEYWORDS.expense);
     
     if (revenueCol && expenseCol && groupColumn) {
+      const gCol = groupColumn;
       // Group by and calculate profit
-      const grouped = calculateProfit(data, groupColumn, revenueCol, expenseCol);
+      const grouped = calculateProfit(data, gCol, revenueCol, expenseCol);
       const results = Object.entries(grouped)
         .map(([key, values]) => ({
-          [groupColumn!]: key,
+          [gCol]: key,
           profit: values.revenue - values.expense,
           revenue: values.revenue,
           expense: values.expense,
@@ -441,25 +1006,25 @@ export function executeQuery(
         .sort((a, b) => b.profit - a.profit)
         .slice(0, 10);
 
-      const sql = `SELECT \n  ${groupColumn},\n  SUM(${revenueCol}) - SUM(${expenseCol}) as profit,\n  SUM(${revenueCol}) as revenue,\n  SUM(${expenseCol}) as expense\nFROM uploaded_data\nGROUP BY ${groupColumn}\nORDER BY profit DESC\nLIMIT 10;`;
+      const sql = `SELECT \n  ${gCol},\n  SUM(${revenueCol}) - SUM(${expenseCol}) as profit,\n  SUM(${revenueCol}) as revenue,\n  SUM(${expenseCol}) as expense\nFROM uploaded_data\nGROUP BY ${gCol}\nORDER BY profit DESC\nLIMIT 10;`;
 
       const currency = detectCurrency(results);
 
       const formattedTable = results.map((row) => ({
-        [groupColumn!]: row[groupColumn],
+        [gCol]: row[gCol],
         "Profit": `${currency}${row.profit.toLocaleString()}`,
         "Revenue": `${currency}${row.revenue.toLocaleString()}`,
         "Expense": `${currency}${row.expense.toLocaleString()}`,
       }));
 
       const chartData = results.map((row) => ({
-        name: String(row[groupColumn]),
+        name: String(row[gCol]),
         sales: row.profit,
       }));
 
       const insight = generateInsight(
         results,
-        groupColumn,
+        gCol,
         ["revenue", "expense"],
         lowerInput,
         currency
@@ -469,7 +1034,7 @@ export function executeQuery(
         sql,
         table: formattedTable,
         chartData,
-        message: `Here is the profit (revenue - expense) breakdown by ${groupColumn}:`,
+        message: `Here is the profit (revenue - expense) breakdown by ${gCol}:`,
         insight,
         chartType: "bar",
       };
@@ -478,32 +1043,34 @@ export function executeQuery(
 
   // NEW: Handle growth rate queries - PRIORITY BEFORE COMPARISON
   if (wantsGrowth && !wantsSummary && groupColumn && valueColumn) {
+    const gCol = groupColumn;
+    const vCol = valueColumn;
     console.log("🎯 GROWTH QUERY DETECTED - Calculating year-over-year growth");
     
-    const resultsWithGrowth = calculateGrowthRate(data, groupColumn, valueColumn);
+    const resultsWithGrowth = calculateGrowthRate(data, gCol, vCol);
     
     console.log("📈 Growth results (first 3):", resultsWithGrowth.slice(0, 3));
     
-    const sql = `SELECT \n  ${groupColumn},\n  SUM(${valueColumn}) as ${valueColumn},\n  ROUND(((SUM(${valueColumn}) - LAG(SUM(${valueColumn})) OVER (ORDER BY ${groupColumn})) / LAG(SUM(${valueColumn})) OVER (ORDER BY ${groupColumn})) * 100, 1) as growth_rate\nFROM uploaded_data\nGROUP BY ${groupColumn}\nORDER BY ${groupColumn} ASC;`;
+    const sql = `SELECT \n  ${gCol},\n  SUM(${vCol}) as ${vCol},\n  ROUND(((SUM(${vCol}) - LAG(SUM(${vCol})) OVER (ORDER BY ${gCol})) / LAG(SUM(${vCol})) OVER (ORDER BY ${gCol})) * 100, 1) as growth_rate\nFROM uploaded_data\nGROUP BY ${gCol}\nORDER BY ${gCol} ASC;`;
     
     const currency = detectCurrency(resultsWithGrowth);
     
     const formattedTable = resultsWithGrowth.map((row) => ({
-      [groupColumn]: row[groupColumn],
-      [valueColumn]: `${currency}${(row[valueColumn] as number).toLocaleString()}`,
+      [gCol]: row[gCol],
+      [vCol]: `${currency}${(row[vCol] as number).toLocaleString()}`,
       "Growth Rate": row.growth === 0 ? "—" : `${row.growth > 0 ? '+' : ''}${row.growth}%`,
     }));
 
     const chartData = resultsWithGrowth.map((row) => ({
-      name: String(row[groupColumn]),
-      [valueColumn]: row[valueColumn],
+      name: String(row[gCol]),
+      [vCol]: row[vCol],
       "Growth %": row.growth,
     }));
 
     const insight = generateInsight(
       resultsWithGrowth,
-      groupColumn,
-      valueColumn,
+      gCol,
+      vCol,
       lowerInput,
       currency
     );
@@ -514,10 +1081,10 @@ export function executeQuery(
       sql,
       table: formattedTable,
       chartData,
-      message: `Here is the year-over-year growth rate for ${valueColumn}:`,
+      message: `Here is the year-over-year growth rate for ${vCol}:`,
       chartType: "multi-line",
       insight,
-      metrics: [valueColumn, "Growth Rate"],
+      metrics: [vCol, "Growth Rate"],
     };
   }
 
@@ -549,15 +1116,16 @@ export function executeQuery(
     });
     
     if (revenueCol && expenseCol && groupColumn) {
+      const gCol = groupColumn;
       // Group by and calculate both metrics
-      const grouped = calculateProfit(data, groupColumn, revenueCol, expenseCol);
+      const grouped = calculateProfit(data, gCol, revenueCol, expenseCol);
       
       // Sort by time if time-based
-      const isTimeBased = isYearColumn(groupColumn) || /month|quarter|period|date/i.test(groupColumn);
+      const isTimeBased = isYearColumn(gCol) || /month|quarter|period|date/i.test(gCol);
       
       const results = Object.entries(grouped)
         .map(([key, values]) => ({
-          [groupColumn!]: key,
+          [gCol]: key,
           revenue: values.revenue,
           expense: values.expense,
           profit: values.revenue - values.expense,
@@ -565,7 +1133,7 @@ export function executeQuery(
         }))
         .sort((a, b) => {
           if (isTimeBased) {
-            return String(a[groupColumn]).localeCompare(String(b[groupColumn]));
+            return String(a[gCol]).localeCompare(String(b[gCol]));
           }
           return b.revenue - a.revenue;
         })
@@ -573,12 +1141,12 @@ export function executeQuery(
 
       console.log("✅ Query Results (First 3):", results.slice(0, 3));
 
-      const sql = `SELECT \n  ${groupColumn},\n  SUM(${revenueCol}) as revenue,\n  SUM(${expenseCol}) as expense,\n  SUM(${revenueCol}) - SUM(${expenseCol}) as profit,\n  ROUND(((SUM(${revenueCol}) - SUM(${expenseCol})) / SUM(${revenueCol})) * 100, 2) as profit_margin\nFROM uploaded_data\nGROUP BY ${groupColumn}\nORDER BY ${isTimeBased ? groupColumn : 'revenue'} ${isTimeBased ? 'ASC' : 'DESC'}\nLIMIT 10;`;
+      const sql = `SELECT \n  ${gCol},\n  SUM(${revenueCol}) as revenue,\n  SUM(${expenseCol}) as expense,\n  SUM(${revenueCol}) - SUM(${expenseCol}) as profit,\n  ROUND(((SUM(${revenueCol}) - SUM(${expenseCol})) / SUM(${revenueCol})) * 100, 2) as profit_margin\nFROM uploaded_data\nGROUP BY ${gCol}\nORDER BY ${isTimeBased ? gCol : 'revenue'} ${isTimeBased ? 'ASC' : 'DESC'}\nLIMIT 10;`;
 
       const currency = detectCurrency(results);
       
       const formattedTable = results.map((row) => ({
-        [groupColumn!]: row[groupColumn],
+        [gCol]: row[gCol],
         "Revenue": `${currency}${row.revenue.toLocaleString()}`,
         "Expense": `${currency}${row.expense.toLocaleString()}`,
         "Profit": `${currency}${row.profit.toLocaleString()}`,
@@ -587,7 +1155,7 @@ export function executeQuery(
 
       // Multi-metric chart data - use actual metric names
       const chartData = results.map((row) => ({
-        name: String(row[groupColumn]),
+        name: String(row[gCol]),
         Revenue: row.revenue,
         Expense: row.expense,
         Profit: row.profit,
@@ -597,7 +1165,7 @@ export function executeQuery(
 
       const insight = generateInsight(
         results,
-        groupColumn,
+        gCol,
         ["revenue", "expense"],  // Use generic names for insight generation
         lowerInput,
         currency
@@ -609,10 +1177,130 @@ export function executeQuery(
         sql,
         table: formattedTable,
         chartData,
-        message: `Here is the comparison of ${revenueCol} and ${expenseCol} by ${groupColumn}:`,
+        message: `Here is the comparison of ${revenueCol} and ${expenseCol} by ${gCol}:`,
         chartType: isTimeBased ? "multi-line" : "multi-bar",
         insight,
         metrics: [revenueCol, expenseCol, "Profit"],
+      };
+    }
+  }
+
+  // Net-style profit margin (wide sheets): profit line ÷ revenue × 100 — not raw PBT totals.
+  const wantsNetMarginOnly =
+    wantsMargin &&
+    !wantsGrowth &&
+    !wantsSummary &&
+    !lowerInput.includes("gross margin") &&
+    !(lowerInput.includes("gross") && lowerInput.includes("margin")) &&
+    !lowerInput.includes("operating margin") &&
+    !lowerInput.includes("ebitda margin");
+
+  if (wantsNetMarginOnly && groupColumn) {
+    const revenueCol = findBestColumn(columns, FINANCIAL_KEYWORDS.revenue);
+    const profitCol = findBestColumn(columns, FINANCIAL_KEYWORDS.profit);
+    if (
+      revenueCol &&
+      profitCol &&
+      revenueCol !== profitCol &&
+      isNumericColumn(data, revenueCol) &&
+      isNumericColumn(data, profitCol)
+    ) {
+      const grouped = groupBySumTwoMetrics(data, groupColumn, revenueCol, profitCol);
+      const isTimeBased =
+        isYearColumn(groupColumn) ||
+        /month|quarter|period|date/i.test(groupColumn);
+
+      const rows = Object.entries(grouped)
+        .map(([key, { a: revenueSum, b: profitSum }]) => {
+          const marginPct =
+            revenueSum !== 0 ? Math.round((10000 * profitSum) / revenueSum) / 100 : 0;
+          return {
+            [groupColumn]: key,
+            [revenueCol]: revenueSum,
+            [profitCol]: profitSum,
+            profit_margin_pct: marginPct,
+          };
+        })
+        .sort((x, y) => {
+          if (isTimeBased) {
+            return String(x[groupColumn]).localeCompare(String(y[groupColumn]));
+          }
+          return (y.profit_margin_pct as number) - (x.profit_margin_pct as number);
+        })
+        .slice(0, 10);
+
+      if (rows.length === 0) {
+        // fall through to generic paths
+      } else {
+      const sql = `SELECT 
+  ${groupColumn},
+  SUM(${revenueCol}) AS ${revenueCol},
+  SUM(${profitCol}) AS ${profitCol},
+  ROUND(100.0 * SUM(${profitCol}) / NULLIF(SUM(${revenueCol}), 0), 2) AS profit_margin_pct
+FROM uploaded_data
+GROUP BY ${groupColumn}
+ORDER BY ${groupColumn} ASC
+LIMIT 10;`;
+
+      const currency = detectCurrency(data);
+      const formattedTable = rows.map((row) => ({
+        [groupColumn]: row[groupColumn],
+        [revenueCol]: `${currency}${(row[revenueCol] as number).toLocaleString()}`,
+        [profitCol]: `${currency}${(row[profitCol] as number).toLocaleString()}`,
+        "Margin %": `${(row.profit_margin_pct as number).toFixed(1)}%`,
+      }));
+
+      const chartData = rows.map((row) => ({
+        name: String(row[groupColumn]),
+        sales: row.profit_margin_pct as number,
+      }));
+
+      const margins = rows.map((r) => r.profit_margin_pct as number);
+      const avgMargin = margins.length ? margins.reduce((s, m) => s + m, 0) / margins.length : 0;
+      const bestIdx = rows.reduce(
+        (bi, r, i) =>
+          (r.profit_margin_pct as number) > (rows[bi].profit_margin_pct as number) ? i : bi,
+        0,
+      );
+      const pl = profitCol.toLowerCase();
+      const marginKind =
+        pl.includes("pbt") || pl.includes("before tax") ? "Pre-tax profit margin" : "Net profit margin";
+      const insight = `${marginKind} (${profitCol} ÷ ${revenueCol} × 100) averages ${avgMargin.toFixed(1)}% across periods. ${rows[bestIdx]?.[groupColumn]} shows the highest margin at ${(rows[bestIdx].profit_margin_pct as number).toFixed(1)}%.`;
+
+      return {
+        sql,
+        table: formattedTable,
+        chartData,
+        message: `Here are profit margins by ${groupColumn} (${profitCol} as a % of ${revenueCol}):`,
+        chartType: isTimeBased ? "line" : "bar",
+        chartValueFormat: "percent",
+        insight,
+        metrics: [revenueCol, profitCol, "Margin %"],
+      };
+      }
+    }
+  }
+
+  // Long facts: superlative + SUM(value) by year picks the wrong row (one metric per year in uploads).
+  if (
+    isFinancialFactsLayout(columns) &&
+    groupColumn &&
+    valueColumn &&
+    /^value$/i.test(String(valueColumn)) &&
+    findYearColumn(data, columns) === groupColumn &&
+    wantsSingleAnswer &&
+    mentionsProfit
+  ) {
+    const rawC = columns.find((c) => /^raw$/i.test(c));
+    if (rawC && apexSeriesFromLongFactRows(data, rawC).length >= 2) {
+      return {
+        sql: `-- Avoid: SELECT year, SUM(value) ... on long facts (one mixed metric per year).`,
+        table: data.slice(0, 12),
+        chartData: [],
+        message:
+          "That question needs **net profit** values, not `SUM(value)` by year (that mixes line items). Re-run **“Which year had the highest net profit?”** — the chat now reads the multi-column **`raw`** row when present.",
+        chartType: "bar",
+        insight: "Image ingest often stores only one `value` per year; `raw` still has the full table text.",
       };
     }
   }
@@ -755,12 +1443,19 @@ LIMIT 10;`;
       useLineChart
     });
 
+    // Grouped SUM/AVG rows use total_${col} / avg_${col}, not the source column name
+    const insightValueKey = wantsTotal
+      ? `total_${valueColumn}`
+      : wantsAverage
+        ? `avg_${valueColumn}`
+        : valueColumn;
+
     // NEW: Generate insight
     const currency = detectCurrency(results);
     const insight = generateInsight(
       results,
       groupColumn,
-      valueColumn,
+      insightValueKey,
       lowerInput,
       currency
     );

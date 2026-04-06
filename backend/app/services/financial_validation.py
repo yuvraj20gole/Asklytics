@@ -25,6 +25,38 @@ class FinancialSeriesValidator:
         if "period" not in rows[0]:
             return
 
+        # Ratio / margin / formula queries — skip magnitude & YoY heuristics (values can be %, days, small ratios).
+        row_keys_lower = [str(k).lower() for k in rows[0].keys()]
+        _formula_key = frozenset(
+            {
+                "gross_profit",
+                "roe_pct",
+                "roa_pct",
+                "roce_pct",
+                "current_ratio",
+                "quick_ratio",
+                "debt_to_equity",
+                "interest_coverage",
+                "asset_turnover",
+                "eps",
+                "pe_ratio",
+                "operating_margin_pct",
+                "ebitda_margin_pct",
+                "gross_margin_pct",
+                "net_profit_margin_pct",
+            }
+        )
+        if any(
+            "margin" in k
+            or "_pct" in k
+            or k.endswith("_days")
+            or k.startswith("yoy_")
+            or k in _formula_key
+            or k.endswith("_ratio")
+            for k in row_keys_lower
+        ):
+            return
+
         metric_keys = [k for k in rows[0].keys() if k != "period"]
         if not metric_keys:
             return

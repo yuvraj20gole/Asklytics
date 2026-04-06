@@ -14,3 +14,13 @@ debug_output/
 
 # Archives not needed in version control
 *.zip
+
+# FinBERT fine-tuned weights (run: PYTHONPATH=backend python -m app.ml.train_classifier)
+backend/app/ml/model/
+
+# LayoutLM: training checkpoints + weight files (often 100MB+; exceeds GitHub single-file limit)
+backend/app/ml/layout_model_trained/checkpoints/
+backend/app/ml/layout_model_trained/**/*.safetensors
+backend/app/ml/layout_model_trained/**/*.pt
+backend/app/ml/layout_model_trained/**/*.pth
+backend/app/ml/layout_model_trained/**/*.bin

@@ -1,0 +1,91 @@
+text,label
+Revenue from Operations,revenue
+Net Sales,revenue
+Total Income,revenue
+Turnover,revenue
+Gross Revenue,revenue
+Sales Revenue,revenue
+Operating Revenue,revenue
+Top Line Revenue,revenue
+Product Revenue,revenue
+Service Revenue,revenue
+Subscription Revenue,revenue
+License Revenue,revenue
+Rental Income,revenue
+Interest Income,revenue
+Dividend Income,revenue
+Other Operating Income,revenue
+Sales of Goods,revenue
+Net Operating Income,revenue
+Consolidated Revenue,revenue
+Segment Revenue,revenue
+Employee Benefit Expense,expense
+Finance Cost,expense
+Other Expenses,expense
+Operating Cost,expense
+Cost of Materials,expense
+Cost of Goods Sold,expense
+Administrative Expenses,expense
+Selling and Distribution Expenses,expense
+Marketing Expense,expense
+Rent Expense,expense
+Utilities Expense,expense
+Insurance Expense,expense
+Professional Fees,expense
+Travel Expense,expense
+Repairs and Maintenance,expense
+Research and Development Expense,expense
+Interest Expense,expense
+Tax Expense,expense
+Depreciation Expense,expense
+Amortisation Expense,expense
+Power and Fuel,expense
+Contract Labour Cost,expense
+Profit Before Tax,profit
+Net Profit,profit
+Earnings After Tax,profit
+PAT,profit
+Profit After Tax,profit
+PBT,profit
+Gross Profit,profit
+Operating Profit,profit
+EBIT,profit
+EBITDA,profit
+Net Earnings,profit
+Retained Earnings Movement,profit
+Other Income,other
+Exceptional Items,other
+Extraordinary Items,other
+Prior Period Adjustments,other
+Miscellaneous Income,other
+Non Operating Income,other
+Gain on Disposal of Assets,other
+Foreign Exchange Gain,other
+Related Party Transactions Note,other
+Contingent Liabilities,other
+Accounting Policy Change,other
+FY 2023 Revenue 578910,revenue
+FY 2022 Revenue 510000,revenue
+FY 2021 Net Sales 420000,revenue
+FY 2023 Total Income 900000,revenue
+FY 2022 Total Income 510000,revenue
+FY 2021 Total Income 480000,revenue
+FY 2020 Total Income 450000,revenue
+FY 2022 Turnover 800000,revenue
+FY 2023 Gross Revenue 1200000,revenue
+FY 2023 Revenue 0578910,revenue
+FY 2022 Revenue 0510000,revenue
+FY 2023 Employee Benefit Expense 120000,expense
+FY 2023 Finance Cost 355000,expense
+FY 2022 Other Expenses 200000,expense
+FY 2023 Operating Cost 150000,expense
+FY 2023 Cost of Materials 400000,expense
+FY 2023 Expenses 355000,expense
+FY 2023 Depreciation Expense 50000,expense
+FY 2023 Profit Before Tax 200000,profit
+FY 2022 Net Profit 180000,profit
+FY 2023 PAT 150000,profit
+FY 2023 Earnings After Tax 148000,profit
+FY 2023 Gross Profit 300000,profit
+FY 2023 Exceptional Items 10000,other
+FY 2022 Other Income 25000,other

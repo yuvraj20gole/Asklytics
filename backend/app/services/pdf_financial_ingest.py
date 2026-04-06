@@ -45,6 +45,7 @@ class ParsedFact:
     source_page: int
     extraction_method: str
     confidence: float
+    raw: str = ""
 
 
 def find_income_statement_table(tables: list[ExtractedTable]) -> ExtractedTable | None:
@@ -86,10 +87,116 @@ def _parse_numeric(value: str) -> float | None:
 
 def _normalize_metric(label: str) -> str | None:
     key = re.sub(r"\s+", " ", (label or "").strip().lower())
+    if re.search(r"\bother\s+expenses?\b", key):
+        return None
     for alias, canonical in sorted(METRIC_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
         if alias in key:
             return canonical
     return None
+
+
+def is_valid_year(year) -> bool:
+    try:
+        y = int(year)
+        return 2000 <= y <= 2100
+    except (ValueError, TypeError):
+        return False
+
+
+def is_row_based_table(rows: list[list[str]]) -> bool:
+    for row in rows[:5]:
+        text = " ".join(str(c) for c in row)
+        if "FY" in text.upper():
+            return True
+        years_in_row = re.findall(r"\b(20\d{2})\b", text)
+        if len(years_in_row) >= 3:
+            continue
+        if any(str(y) in text for y in range(2000, 2030)):
+            return True
+    return False
+
+
+def parse_row_based_table(rows: list[list[str]]) -> list[dict]:
+    facts: list[dict] = []
+    for row in rows:
+        text = " ".join(str(c) for c in row)
+        match = re.search(r"(20\d{2})", text)
+        if not match:
+            continue
+        year = int(match.group(1))
+        if not is_valid_year(year):
+            continue
+        numbers = re.findall(r"\d[\d,]*", text)
+        parsed_nums: list[int] = []
+        for n in numbers:
+            try:
+                parsed_nums.append(int(n.replace(",", "")))
+            except ValueError:
+                continue
+        numbers = [n for n in parsed_nums if n != year]
+        numbers = [n for n in numbers if n > 1000]
+        if len(numbers) == 0:
+            continue
+        # numbers = large amounts only (>1000, year stripped).
+        revenue = numbers[0]
+        expenses: int | None = None
+        profit: int | None = None
+        if len(numbers) == 2:
+            profit = numbers[1]
+        elif len(numbers) == 3:
+            expenses, profit = numbers[1], numbers[2]
+        elif len(numbers) == 4:
+            # [revenue, expenses, profit, trailing_large] — user -3 / -2 slots.
+            expenses, profit = numbers[-3], numbers[-2]
+        elif len(numbers) >= 5:
+            # Dense P&L: many line items; small trailing % cells are filtered — use last two large as totals.
+            expenses, profit = numbers[-2], numbers[-1]
+        if len(numbers) == 2 and profit == revenue:
+            profit = None
+
+        logger.info(
+            "[ROW METRICS] year=%s, revenue=%s, expenses=%s, profit=%s",
+            year,
+            revenue,
+            expenses,
+            profit,
+        )
+
+        raw = text[:500]
+        facts.append(
+            {
+                "year": year,
+                "metric": "revenue",
+                "value": revenue,
+                "source": "pdf_row_parser",
+                "raw": raw,
+            }
+        )
+        if expenses is not None:
+            facts.append(
+                {
+                    "year": year,
+                    "metric": "expenses",
+                    "value": expenses,
+                    "source": "pdf_row_parser",
+                    "raw": raw,
+                }
+            )
+        if profit is not None:
+            # Stored as net_income so existing /ask profit templates (metric IN (...)) match the DB.
+            facts.append(
+                {
+                    "year": year,
+                    "metric": "net_income",
+                    "value": profit,
+                    "source": "pdf_row_parser",
+                    "raw": raw,
+                }
+            )
+        logger.info("[ROW PARSED] year=%s, revenue=%s", year, revenue)
+    if facts:
+        logger.info("MULTI-METRIC EXTRACTION ENABLED — REVENUE + EXPENSES + PROFIT")
+    return facts
 
 
 def normalize_text(text: str) -> str:
@@ -152,11 +259,11 @@ class PDFFinancialIngestService:
         "sales",
         "turnover",
     ]
+    # Rows containing these are skipped entirely (not revenue, not other metrics).
+    # "Other income" lines are extracted via metric other_income (see FINANCIAL_METRICS).
     REVENUE_NEGATIVE_FILTERS = [
-        "other income",
-        "non-operating income",
-        "interest income",
-        "dividend income",
+        "comprehensive income",
+        "exceptional",
     ]
     REVENUE_PRIORITY = [
         "revenue from operations",
@@ -182,6 +289,23 @@ class PDFFinancialIngestService:
 
     TEXT_REVENUE_KEYWORDS = ["revenue", "total income", "net sales", "turnover"]
     FINANCIAL_METRICS: dict[str, list[str]] = {
+        # Checked before revenue so "Other income" is not misclassified as revenue.
+        "other_income": [
+            "other income",
+            "non-operating income",
+            "non operating income",
+            "interest income",
+            "dividend income",
+        ],
+        # Before revenue/expenses so "cost of …" rows map to COGS, not revenue or generic expenses.
+        "cogs": [
+            "cost of materials",
+            "cost of material",
+            "cost of goods sold",
+            "cost of goods",
+            "cost of sales",
+            "cost of revenue",
+        ],
         "revenue": [
             "revenue",
             "revenue from operations",
@@ -191,6 +315,23 @@ class PDFFinancialIngestService:
             "turnover",
             "gross revenue",
             "operating revenue",
+        ],
+        "pbt": [
+            "profit before tax",
+            "profit before taxation",
+            "profit before taxes",
+            "pbt",
+        ],
+        "finance_costs": [
+            "finance costs",
+            "finance cost",
+            "interest expense",
+            "borrowing costs",
+        ],
+        "depreciation": [
+            "depreciation",
+            "depreciation and amortisation",
+            "depreciation and amortization",
         ],
         "net_profit": [
             "net profit",
@@ -345,8 +486,12 @@ class PDFFinancialIngestService:
                 best_header_idx,
                 best_year_cols,
             )
-            # NEW: accept even 1 year column.
-            return best_header_idx, best_year_cols
+            valid_year_cols = [(idx, y) for idx, y in best_year_cols if is_valid_year(y)]
+            logger.info("[VALID YEARS] %s", valid_year_cols)
+            if not valid_year_cols:
+                logger.warning("[YEAR DETECTION FAILED] No valid years found")
+                return best_header_idx, []
+            return best_header_idx, valid_year_cols
 
         # FALLBACK (do not skip table): assume first col is label, remaining are values.
         max_cols = max((len(r) for r in rows if r), default=0)
@@ -361,17 +506,156 @@ class PDFFinancialIngestService:
         n_value_cols = max_cols - 1
         pseudo_years = [str(base_year - i) for i in range(n_value_cols)]
         year_cols = [(1 + i, pseudo_years[i]) for i in range(n_value_cols)]
+        year_cols = [(idx, y) for idx, y in year_cols if is_valid_year(y)]
         logger.info(
             "Fallback triggered: assigning pseudo-years base_year=%s year_cols=%s",
             base_year,
             year_cols,
         )
+        logger.info("[VALID YEARS] %s", year_cols)
+        if not year_cols:
+            logger.warning("[YEAR DETECTION FAILED] No valid years found")
+            return 0, []
         return 0, year_cols
+
+    def _find_year_label_header_row(self, rows: list[list[str]]) -> int | None:
+        """Header row whose first cell is Year/Period (transposed P&L: FY in column 0)."""
+        for i, row in enumerate(rows[:15]):
+            if not row:
+                continue
+            h0 = re.sub(r"\s+", " ", (row[0] or "").strip().lower())
+            if h0 in ("year", "period", "fy") or h0.startswith("year "):
+                return i
+        return None
+
+    def _count_fy_in_first_column(self, rows: list[list[str]], header_idx: int) -> int:
+        n = 0
+        for i, row in enumerate(rows):
+            if i == header_idx or not row:
+                continue
+            c0 = (row[0] or "").strip()
+            if re.search(r"fy\s*(?:19|20)\d{2}", c0, flags=re.IGNORECASE):
+                n += 1
+            elif re.match(r"^(?:19|20)\d{2}$", c0):
+                n += 1
+        return n
+
+    def _is_transposed_year_per_row_pl(self, rows: list[list[str]]) -> tuple[bool, int]:
+        hi = self._find_year_label_header_row(rows)
+        if hi is None:
+            return False, 0
+        header = rows[hi] if hi < len(rows) else []
+        if len(header) < 4:
+            return False, hi
+        if self._count_fy_in_first_column(rows, hi) < 2:
+            return False, hi
+        return True, hi
+
+    def _period_from_fy_cell(self, cell: str) -> str | None:
+        t = (cell or "").strip()
+        if not t:
+            return None
+        m = re.search(r"fy\s*((?:19|20)\d{2})", t, flags=re.IGNORECASE)
+        if m:
+            return m.group(1)
+        m = re.search(r"\b((?:19|20)\d{2})\b", t)
+        if m:
+            return m.group(1)
+        return self._normalize_period_token(t)
+
+    def _extract_transposed_pl_facts(
+        self,
+        table: ExtractedTable,
+        header_idx: int,
+        currency: str,
+        candidates: list[ParsedFact],
+    ) -> tuple[int, int, set[str]]:
+        """
+        P&L with metrics as column headers and FYxxxx in column 0 (common in pdfplumber).
+        Returns (distinct_revenue_periods_count, total_facts_appended, revenue_period_labels).
+        """
+        rows = table.rows
+        header = rows[header_idx]
+        context_blob = " ".join(" ".join(r) for r in rows[: max(3, header_idx + 1)])
+        unit = self._detect_unit(context_blob)
+        table_level = "consolidated" if "consolidated" in context_blob.lower() else "standalone"
+
+        col_infos: list[tuple[int, str, str]] = []
+        for j in range(1, len(header)):
+            label = re.sub(r"\s+", " ", (header[j] or "").strip())
+            if not label or label.lower() in ("%", "₹", "rs.", "rs"):
+                continue
+            metric = self._detect_metric_from_row_text(label)
+            if metric is None:
+                metric = _normalize_metric(label)
+            if not metric:
+                continue
+            col_infos.append((j, label, metric))
+
+        revenue_cols = [(j, lab, self.get_revenue_priority_score(lab)) for j, lab, m in col_infos if m == "revenue"]
+        best_revenue_j: int | None = None
+        if revenue_cols:
+            best_revenue_j = min(revenue_cols, key=lambda x: x[2])[0]
+
+        revenue_periods: set[str] = set()
+        total = 0
+        for row_idx, row in enumerate(rows):
+            if row_idx == header_idx or not row:
+                continue
+            period = self._period_from_fy_cell(row[0] if row else "")
+            if not period or not is_valid_year(period):
+                continue
+            for j, _label, metric in col_infos:
+                if metric == "revenue" and best_revenue_j is not None and j != best_revenue_j:
+                    continue
+                if j >= len(row):
+                    continue
+                cell_text = str(row[j] or "").strip()
+                parsed = _parse_number(cell_text)
+                if not self.is_valid_financial_value(cell_text, parsed, metric=metric):
+                    continue
+                value = self._to_inr_crore(float(parsed), unit)
+                if metric == "eps":
+                    is_val = parsed is not None and float(parsed) > 0
+                else:
+                    is_val = value >= 1000
+                conf = 0.95 if table_level == "consolidated" else 0.8
+                candidates.append(
+                    ParsedFact(
+                        statement_type="income_statement",
+                        metric=metric,
+                        period=period,
+                        value=value,
+                        currency=currency,
+                        unit="INR_CRORE",
+                        level=table_level,
+                        is_valid=is_val,
+                        source_page=table.page_number,
+                        extraction_method="rule",
+                        confidence=conf if metric != "eps" else 0.75,
+                    )
+                )
+                total += 1
+                if metric == "revenue":
+                    revenue_periods.add(period)
+
+        logger.info(
+            "[TRANSPOSED P&L] page=%s table=%s header_row=%s revenue_periods=%s facts=%s",
+            table.page_number,
+            table.table_index,
+            header_idx,
+            sorted(revenue_periods),
+            total,
+        )
+        return len(revenue_periods), total, revenue_periods
 
     def _detect_metric_from_row_text(self, row_text: str) -> str | None:
         # Normalize: lowercase, collapse spaces.
         text = re.sub(r"\s+", " ", (row_text or "").strip().lower())
         if not text:
+            return None
+        # Avoid classifying "Other Expenses" as generic expenses (would double-count with Total Expenses).
+        if re.search(r"\bother\s+expenses?\b", text):
             return None
         if any(bad in text for bad in self.REVENUE_NEGATIVE_FILTERS):
             return None
@@ -565,6 +849,48 @@ class PDFFinancialIngestService:
         revenue = [(year, value) for metric, year, value in triples if metric == "revenue"]
         return revenue
 
+    def _try_parse_row_based_table(
+        self, table: ExtractedTable, currency: str, candidates: list[ParsedFact]
+    ) -> bool:
+        if not is_row_based_table(table.rows):
+            return False
+        logger.info(
+            "[ROW MODE] Using row-based parser page=%s table_index=%s",
+            table.page_number,
+            table.table_index,
+        )
+        row_items = parse_row_based_table(table.rows)
+        if not row_items:
+            return False
+        context_blob = " ".join(" ".join(r) for r in table.rows[: max(3, 5)])
+        unit = self._detect_unit(context_blob)
+        table_level = "consolidated" if "consolidated" in context_blob.lower() else "standalone"
+        for item in row_items:
+            raw_v = float(item["value"])
+            v_crore = self._to_inr_crore(raw_v, unit)
+            candidates.append(
+                ParsedFact(
+                    statement_type="income_statement",
+                    metric=str(item["metric"]),
+                    period=str(item["year"]),
+                    value=v_crore,
+                    currency=currency,
+                    unit="INR_CRORE",
+                    level=table_level,
+                    is_valid=raw_v > 1000,
+                    source_page=table.page_number,
+                    extraction_method="pdf_row_parser",
+                    confidence=0.85,
+                    raw=str(item.get("raw", "")),
+                )
+            )
+        logger.info(
+            "[PDF ROW PARSER] Total facts extracted=%s sample_rows=%s",
+            len(row_items),
+            [{"year": it["year"], "value": it["value"]} for it in row_items[:5]],
+        )
+        return True
+
     def process_tables_to_facts(self, tables: list[ExtractedTable], currency: str, full_text: str | None = None) -> list[ParsedFact]:
         candidates: list[ParsedFact] = []
         debug_tables: list[dict] = []
@@ -578,36 +904,51 @@ class PDFFinancialIngestService:
         if not main_table:
             logger.warning("[NO INCOME TABLE FOUND]")
             for t in tables:
-                debug_tables.append(
-                    {
-                        "page": t.page_number,
-                        "table_index": t.table_index,
-                        "rows": t.rows[:10],
-                    }
-                )
-            try:
-                os.makedirs("debug_output", exist_ok=True)
-                with open("debug_output/debug_tables.json", "w", encoding="utf-8") as f:
-                    json.dump(debug_tables, f, indent=2)
-                logger.info("Wrote debug tables JSON: debug_output/debug_tables.json (tables=%s)", len(debug_tables))
-            except Exception as exc:
-                logger.info("Failed writing debug tables JSON: %s", exc)
-            logger.info("\n===== INGEST SUMMARY =====")
-            logger.info("Total tables: %s", total_tables)
-            logger.info("Processed tables: 0")
-            logger.info("Skipped (no signal): %s", total_tables)
-            logger.info("Skipped (reject): 0")
-            logger.info("Skipped (no year mapping): 0")
-            logger.info("")
-            logger.info("Revenue insertions (final selected rows):")
-            logger.info("Rule-based: 0")
-            logger.info("AI fallback: 0")
-            logger.info("Text fallback: 0")
-            logger.info("Total revenue rows: 0")
-            logger.info("==========================\n")
-            return []
+                if self._try_parse_row_based_table(t, currency, candidates):
+                    processed_tables = 1
+                    debug_tables.append(
+                        {
+                            "page": t.page_number,
+                            "table_index": t.table_index,
+                            "rows": t.rows[:10],
+                        }
+                    )
+                    break
+            if not candidates:
+                for t in tables:
+                    debug_tables.append(
+                        {
+                            "page": t.page_number,
+                            "table_index": t.table_index,
+                            "rows": t.rows[:10],
+                        }
+                    )
+                try:
+                    os.makedirs("debug_output", exist_ok=True)
+                    with open("debug_output/debug_tables.json", "w", encoding="utf-8") as f:
+                        json.dump(debug_tables, f, indent=2)
+                    logger.info(
+                        "Wrote debug tables JSON: debug_output/debug_tables.json (tables=%s)",
+                        len(debug_tables),
+                    )
+                except Exception as exc:
+                    logger.info("Failed writing debug tables JSON: %s", exc)
+                logger.info("\n===== INGEST SUMMARY =====")
+                logger.info("Total tables: %s", total_tables)
+                logger.info("Processed tables: 0")
+                logger.info("Skipped (no signal): %s", total_tables)
+                logger.info("Skipped (reject): 0")
+                logger.info("Skipped (no year mapping): 0")
+                logger.info("")
+                logger.info("Revenue insertions (final selected rows):")
+                logger.info("Rule-based: 0")
+                logger.info("AI fallback: 0")
+                logger.info("Text fallback: 0")
+                logger.info("Total revenue rows: 0")
+                logger.info("==========================\n")
+                return []
 
-        for table in [main_table]:
+        for table in ([main_table] if main_table else []):
             debug_tables.append(
                 {
                     "page": table.page_number,
@@ -664,10 +1005,72 @@ class PDFFinancialIngestService:
                 table.table_index,
             )
 
+            transpose_pl, transpose_header_idx = self._is_transposed_year_per_row_pl(table.rows)
+            if transpose_pl:
+                logger.info(
+                    "[TABLE PATH] Transposed P&L (FY in column 0) header_row=%s — skipping columnar year-column path",
+                    transpose_header_idx,
+                )
+                rev_periods, _fact_count, rev_year_set = self._extract_transposed_pl_facts(
+                    table, transpose_header_idx, currency, candidates
+                )
+                processed_tables += 1
+                revenue_inserted_transpose = rev_periods
+                try:
+                    years_inserted_transpose = sorted(
+                        int(p) for p in rev_year_set if is_valid_year(p)
+                    )
+                except Exception:
+                    years_inserted_transpose = []
+                span_ok_transpose = True
+                if len(years_inserted_transpose) >= 2:
+                    span_ok_transpose = (max(years_inserted_transpose) - min(years_inserted_transpose)) >= 2
+                if revenue_inserted_transpose < 2 or not span_ok_transpose:
+                    table_text = "\n".join(["\t".join(r) for r in table.rows])
+                    logger.info(
+                        "[AI FALLBACK] Transposed table weak revenue span page=%s table_index=%s",
+                        table.page_number,
+                        table.table_index,
+                    )
+                    ai_items = self.ai_extractor.extract_revenue_by_year(table_text)
+                    for item in ai_items:
+                        try:
+                            year = str(int(item.get("year")))
+                            revenue = float(item.get("revenue"))
+                        except Exception:
+                            continue
+                        if revenue <= 1000:
+                            continue
+                        if not is_valid_year(year):
+                            continue
+                        candidates.append(
+                            ParsedFact(
+                                statement_type="income_statement",
+                                metric="revenue",
+                                period=year,
+                                value=revenue,
+                                currency=currency,
+                                unit="INR_CRORE",
+                                level="consolidated",
+                                is_valid=True,
+                                source_page=table.page_number,
+                                extraction_method="ai_extracted",
+                                confidence=0.6,
+                            )
+                        )
+                continue
+
             header_idx, year_columns = self._detect_year_columns(table.rows)
             if header_idx is None:
                 header_idx = 0
+
+            # Row parser collapses each row to 3 numbers (revenue/expenses/PAT) and drops COGS, PBT,
+            # finance, depreciation — so gross margin & EBITDA stay empty in chat. Prefer columnar
+            # extraction whenever FY columns exist.
             if not year_columns:
+                if self._try_parse_row_based_table(table, currency, candidates):
+                    processed_tables += 1
+                    continue
                 logger.info(
                     "No year columns detected even after fallback: page=%s table=%s (will still scan rows, but no year mapping possible)",
                     table.page_number,
@@ -675,6 +1078,11 @@ class PDFFinancialIngestService:
                 )
                 skipped_no_year += 1
                 continue
+
+            logger.info(
+                "[TABLE PATH] Columnar extraction (year columns=%s) — not using row-only parser",
+                [p for _, p in year_columns],
+            )
             logger.info(
                 "Detected year columns: page=%s table=%s header_row=%s years=%s",
                 table.page_number,
@@ -828,6 +1236,8 @@ class PDFFinancialIngestService:
                     continue
 
                 for col_idx, period, _cell, _parsed in valid_pairs:
+                    if not is_valid_year(period):
+                        continue
                     if col_idx >= len(best_row):
                         logger.info(
                             "[DEBUG] Year=%s col_idx=%s raw_cell=None (index out of range)",
@@ -917,6 +1327,8 @@ class PDFFinancialIngestService:
                     extracted_pairs.append((year, revenue))
                 logger.info("[AI RESULT] Extracted revenue: %s", extracted_pairs)
                 for year, revenue in extracted_pairs:
+                    if not is_valid_year(year):
+                        continue
                     candidates.append(
                         ParsedFact(
                             statement_type="income_statement",
@@ -936,6 +1348,8 @@ class PDFFinancialIngestService:
             for row_idx, row, row_text, metric in other_metric_rows:
                 for col_idx, period in year_columns:
                     if col_idx >= len(row):
+                        continue
+                    if not is_valid_year(period):
                         continue
                     cell_text = str(row[col_idx] or "").strip()
                     parsed = _parse_number(cell_text)
@@ -961,6 +1375,9 @@ class PDFFinancialIngestService:
         grouped: dict[tuple[str, str], list[ParsedFact]] = {}
         for fact in candidates:
             if not fact.is_valid:
+                continue
+            if not is_valid_year(fact.period):
+                logger.info("[SKIP FACT] Invalid period year=%s (strict 2000–2100)", fact.period)
                 continue
             grouped.setdefault((fact.metric, fact.period), []).append(fact)
 
@@ -1002,6 +1419,8 @@ class PDFFinancialIngestService:
             for year, revenue in text_pairs:
                 if revenue <= 1000:
                     continue
+                if not is_valid_year(year):
+                    continue
                 candidates.append(
                     ParsedFact(
                         statement_type="income_statement",
@@ -1022,6 +1441,8 @@ class PDFFinancialIngestService:
             grouped = {}
             for fact in candidates:
                 if not fact.is_valid:
+                    continue
+                if not is_valid_year(fact.period):
                     continue
                 grouped.setdefault((fact.metric, fact.period), []).append(fact)
             selected = []
@@ -1063,7 +1484,12 @@ class PDFFinancialIngestService:
         revenue_inserted_text = sum(
             1 for s in selected if s.metric == "revenue" and s.extraction_method == "text_fallback"
         )
-        total_revenue_rows = revenue_inserted_rule + revenue_inserted_ai + revenue_inserted_text
+        revenue_inserted_row = sum(
+            1 for s in selected if s.metric == "revenue" and s.extraction_method == "pdf_row_parser"
+        )
+        total_revenue_rows = (
+            revenue_inserted_rule + revenue_inserted_ai + revenue_inserted_text + revenue_inserted_row
+        )
 
         logger.info("\n===== INGEST SUMMARY =====")
         logger.info("Total tables: %s", total_tables)
@@ -1076,14 +1502,108 @@ class PDFFinancialIngestService:
         logger.info("Rule-based: %s", revenue_inserted_rule)
         logger.info("AI fallback: %s", revenue_inserted_ai)
         logger.info("Text fallback: %s", revenue_inserted_text)
+        logger.info("Row-based parser: %s", revenue_inserted_row)
         logger.info("Total revenue rows: %s", total_revenue_rows)
         logger.info("==========================\n")
 
+        periods_final = sorted({s.period for s in selected if is_valid_year(s.period)})
+        logger.info("[VALID YEARS FINAL] %s", periods_final)
+        logger.info("[FINAL FACT COUNT] %s", len(selected))
+
         return selected
+
+    def _facts_from_pdf_image_fallback(self, pdf_bytes: bytes, currency_hint: str) -> list[ParsedFact]:
+        try:
+            from pdf2image import convert_from_bytes
+        except ImportError:
+            logger.warning(
+                "[PDF FALLBACK] pdf2image not installed; add pdf2image and poppler for image fallback"
+            )
+            return []
+
+        last_page = max(1, int(self.PRIORITY_PAGES))
+        try:
+            images = convert_from_bytes(
+                pdf_bytes,
+                dpi=150,
+                fmt="png",
+                first_page=1,
+                last_page=last_page,
+            )
+        except Exception as exc:
+            logger.error("[PDF FALLBACK] convert_from_bytes failed: %s", exc, exc_info=True)
+            return []
+
+        logger.info("[PDF IMAGE] Converted PDF to images")
+        logger.info("[PDF IMAGE] Total pages: %d", len(images))
+
+        import tempfile
+
+        from app.services.image_financial_ingest import process_image_financials
+
+        facts: list[ParsedFact] = []
+        for i, pil_img in enumerate(images):
+            logger.info("[PDF FALLBACK] Processing page %d/%d", i + 1, len(images))
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                    tmp_path = tmp.name
+                pil_img.convert("RGB").save(tmp_path, "PNG")
+                result = process_image_financials(tmp_path)
+                rows = result.get("rows")
+                if rows is None:
+                    rows = []
+                logger.info("[PDF IMAGE] Page %d processed, rows=%d", i + 1, len(rows))
+                for r in rows:
+                    y = r.get("year")
+                    v = r.get("value")
+                    m = r.get("metric")
+                    if y is None or v is None or m is None:
+                        continue
+                    cur = r.get("currency") or currency_hint or _detect_currency(str(r.get("raw", "")))
+                    facts.append(
+                        ParsedFact(
+                            statement_type="income_statement",
+                            metric=str(m),
+                            period=str(int(y)),
+                            value=float(v),
+                            currency=str(cur),
+                            unit="ABSOLUTE",
+                            level="line",
+                            is_valid=True,
+                            source_page=i + 1,
+                            extraction_method="pdf_image_fallback",
+                            confidence=float(
+                                (result.get("confidence_summary") or {}).get("avg_confidence", 0.75)
+                            ),
+                            raw=str(r.get("raw", "")),
+                        )
+                    )
+            except Exception as exc:
+                logger.warning("[PDF FALLBACK] page %d failed: %s", i + 1, exc, exc_info=True)
+            finally:
+                if tmp_path:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+
+        if not facts:
+            logger.error("[PDF FALLBACK FAILED] No rows extracted from rendered pages")
+        else:
+            logger.info("[PDF FALLBACK SUCCESS] Extracted %d fact(s) from image pipeline", len(facts))
+        return facts
 
     def parse_pdf(self, pdf_bytes: bytes) -> tuple[list[ParsedFact], str]:
         tables, currency, full_text = self.extract_all_tables(pdf_bytes)
         facts = self.process_tables_to_facts(tables, currency, full_text=full_text)
+        if not facts:
+            logger.warning("[PDF FALLBACK TRIGGERED] No structured tables found")
+            facts = self._facts_from_pdf_image_fallback(pdf_bytes, currency)
+            if facts:
+                curs = [f.currency for f in facts if f.currency]
+                if curs:
+                    currency = max(set(curs), key=curs.count)
         return facts, currency
 
     def to_table_models(self, company: str, source_file: str, tables: list[ExtractedTable]) -> list[FinancialTable]:
