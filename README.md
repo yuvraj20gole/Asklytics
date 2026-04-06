@@ -63,14 +63,37 @@ cp web/.env.example web/.env
 # Default API: http://localhost:8000
 ```
 
-### 3. Run the API
+### 3. Run the API (backend)
 
-From the **repo root**:
+You need the API for **login**, **`/ask`**, **PDF/image ingest**, etc. The database defaults to **SQLite** (`backend/local.db` when you run from `backend/`).
+
+**Option A — from `backend/` (simplest):**
+
+```bash
+cd backend
+source ../.venv/bin/activate   # venv created at repo root
+pip install -r requirements.txt
+cp ../.env.example .env        # edit JWT_SECRET_KEY (and optional OPENAI_API_KEY)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Option B — from repo root:**
 
 ```bash
 source .venv/bin/activate
-PYTHONPATH=backend uvicorn app.main:app --reload --port 8000
+pip install -r backend/requirements.txt
+cp .env.example .env
+PYTHONPATH=backend uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+**Docker (no local Python):**
+
+```bash
+docker build -t asklytics-api -f backend/Dockerfile backend
+docker run --rm -p 8000:8000 -e JWT_SECRET_KEY=your-secret asklytics-api
+```
+
+For a **hosted frontend** (Vercel, etc.), set **`CORS_ALLOW_ORIGINS`** to that site’s origin (see `.env.example`).
 
 Open interactive docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 

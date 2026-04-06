@@ -1,0 +1,7 @@
+__pycache__
+*.py[cod]
+.pytest_cache
+.venv
+.git
+*.db-journal
+app/ml/layout_model_trained/checkpoints
