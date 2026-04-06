@@ -9,7 +9,11 @@ import { History } from "./pages/history";
 import { Analytics } from "./pages/analytics";
 import { Settings } from "./pages/settings";
 
-export const router = createBrowserRouter([
+const basename =
+  import.meta.env.BASE_URL.replace(/\/$/, "") || undefined;
+
+export const router = createBrowserRouter(
+  [
   {
     path: "/",
     Component: Landing,
@@ -46,4 +50,6 @@ export const router = createBrowserRouter([
     path: "/settings",
     Component: Settings,
   },
-]);
+  ],
+  basename ? { basename } : undefined,
+);

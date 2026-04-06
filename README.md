@@ -13,14 +13,14 @@ Repository: [github.com/yuvraj20gole/Asklytics](https://github.com/yuvraj20gole/
 | **`backend/`** | FastAPI API: JWT auth, text-to-SQL (`/ask`), PDF financial ingest, PyTorch revenue forecast, image ingest endpoint (pipeline evolving). |
 | **`web/`** | Primary UI: Vite + React + TypeScript — landing, auth, dashboard, chat, analytics, settings. |
 | **`frontend/`** | Optional **Streamlit** UI that talks to the same API (older flow; see Streamlit section below). |
-| **`shared/prompts/`** | Prompt templates for LLM-assisted SQL. |
+| **`shared/prompts/`** | Prompt templates for optional SQL extensions. |
 | **`infra/`** | Docker / compose for packaging experiments. |
 
 ---
 
 ## Tech stack
 
-- **Backend:** Python, FastAPI, Uvicorn, SQLAlchemy, Pydantic, OpenAI (optional), PyTorch (forecast), PDF/table libraries, OpenCV + EasyOCR (image pipeline).
+- **Backend:** Python, FastAPI, Uvicorn, SQLAlchemy, Pydantic, PyTorch (forecast), PDF/table libraries, OpenCV + EasyOCR (image pipeline). `/ask` uses **rule-based SQL** (no external LLM required).
 - **Web:** React 18, TypeScript, Vite, Tailwind, Recharts, React Router.
 - **Database:** SQLite by default (`local.db`); PostgreSQL supported via `DATABASE_URL`.
 
@@ -54,7 +54,6 @@ cp .env.example .env
 Edit `.env` and set at least:
 
 - `JWT_SECRET_KEY` — use a long random string in any real deployment.
-- `OPENAI_API_KEY` — required for LLM text-to-SQL and optional AI helpers (omit to use limited rule-based SQL fallbacks where implemented).
 
 Copy `web/.env.example` to `web/.env` if you need a non-default API URL:
 
@@ -73,7 +72,7 @@ You need the API for **login**, **`/ask`**, **PDF/image ingest**, etc. The datab
 cd backend
 source ../.venv/bin/activate   # venv created at repo root
 pip install -r requirements.txt
-cp ../.env.example .env        # edit JWT_SECRET_KEY (and optional OPENAI_API_KEY)
+cp ../.env.example .env        # edit JWT_SECRET_KEY
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -130,20 +129,27 @@ The repository **root has no `index.html`**—only this README. The real fronten
 
 Deploy the **FastAPI backend** separately and set the web app’s **API base URL** (see `web/.env.example`).
 
+### Deployment checklist (production)
+
+1. **Backend:** deploy from **`backend/`** (e.g. **`backend/Dockerfile`**, Render web service, or any Python host). Set **`JWT_SECRET_KEY`**, **`DATABASE_URL`** if you use PostgreSQL, and **`CORS_ALLOW_ORIGINS`** to your frontend origin(s) (comma-separated, no spaces).
+2. **Frontend:** build **`web/`** and host **`web/dist`**. Set **`VITE_API_BASE`** at build time to your API URL (no trailing slash).
+3. **Smoke test:** open the hosted app, log in, confirm **`/ask`** and ingest routes work; fix CORS if the browser blocks requests.
+
 ### Render (API + static web in one blueprint)
 
 1. [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint** → connect this repo (uses root **`render.yaml`**).
 2. When the **API** service is live, copy its URL (e.g. `https://asklytics-api.onrender.com`).
 3. Open the **static web** service → **Environment** → set **`VITE_API_BASE`** to that URL (no trailing slash) → **Manual Deploy**.
 4. Open the **API** service → set **`CORS_ALLOW_ORIGINS`** to your **exact** frontend origin (e.g. `https://asklytics-web.onrender.com`). Comma-separate multiple origins if needed.
-5. Backend env: set **`OPENAI_API_KEY`** if you use LLM SQL; **`JWT_SECRET_KEY`** is auto-generated unless you override.
+5. **`JWT_SECRET_KEY`** is auto-generated in the blueprint unless you override it in the API service.
 
 ### GitHub Pages (optional)
 
 1. Repo **Settings** → **Pages** → **Build and deployment** → source **GitHub Actions**.
-2. **Settings** → **Secrets and variables** → **Actions** → add **`VITE_API_BASE`** (your production API URL).
-3. Push to `main` (or run workflow manually); the workflow is **`.github/workflows/deploy-web-pages.yml`**.
-4. Set **`CORS_ALLOW_ORIGINS`** on the API to your Pages URL (e.g. `https://<user>.github.io/Asklytics/`).
+2. **Settings** → **Secrets and variables** → **Actions** → add secret **`VITE_API_BASE`** (your production API URL, no trailing slash).
+3. Under **Secrets and variables** → **Actions** → tab **Variables**, optionally add **`PAGES_BASE_PATH`** (e.g. `/Asklytics/` including slashes). It must match the project path in the site URL. If you omit it, the workflow defaults to **`/Asklytics/`** (change the default in **`.github/workflows/deploy-web-pages.yml`** if your repo name differs).
+4. Push to `main` (or run workflow manually); the workflow is **`.github/workflows/deploy-web-pages.yml`**.
+5. Set **`CORS_ALLOW_ORIGINS`** on the API to your Pages URL (e.g. `https://<user>.github.io/Asklytics/`).
 
 ---
 
