@@ -4,19 +4,17 @@
 # 3) In the static service, set env VITE_API_BASE to that URL (no trailing slash) → Manual Deploy.
 # 4) In the API service, set CORS_ALLOW_ORIGINS to your web URL (e.g. https://asklytics-web.onrender.com).
 #
-# Note: Free Python tier has limited RAM; PyTorch/EasyOCR image ingest may need a larger plan or a slim build.
-# Pin Python via backend/runtime.txt — Render may default to 3.14+, where torch==2.6.0 has no wheels.
+# API uses Docker (backend/Dockerfile) so Python stays 3.12. Native `runtime: python` + rootDir ignored
+# backend/runtime.txt for some setups; Render still picked 3.14 — torch==2.6.0 has no cp314 wheels.
 
 services:
   - type: web
     name: asklytics-api
-    runtime: python
+    runtime: docker
     plan: free
     region: oregon
-    rootDir: backend
-    # --no-cache-dir reduces disk use during torch/transformers install on small builders
-    buildCommand: pip install --no-cache-dir -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     healthCheckPath: /docs
     envVars:
       - key: JWT_SECRET_KEY
