@@ -17,6 +17,8 @@ datasets==4.8.4
 distro==1.9.0
 dnspython==2.8.0
 ecdsa==0.19.1
+# EasyOCR depends on python-bidi; 0.6+ builds with Rust/maturin — Render’s read-only FS breaks cargo.
+python-bidi==0.4.2
 easyocr==1.7.2
 email-validator==2.3.0
 fastapi==0.135.1
