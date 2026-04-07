@@ -24,10 +24,10 @@ services:
       - key: CORS_ALLOW_ORIGINS
         sync: false
 
+  # Static sites: omit `plan` — `free` is not valid for runtime: static (see Render blueprint spec).
   - type: web
     name: asklytics-web
     runtime: static
-    plan: free
     rootDir: web
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
