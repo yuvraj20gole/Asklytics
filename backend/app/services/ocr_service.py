@@ -17,8 +17,14 @@ def _configure_ssl_for_https_downloads() -> None:
 
 _configure_ssl_for_https_downloads()
 
-# Initialize once (important for performance)
-reader = easyocr.Reader(["en"], gpu=False)
+_reader: easyocr.Reader | None = None
+
+
+def _get_reader() -> easyocr.Reader:
+    global _reader
+    if _reader is None:
+        _reader = easyocr.Reader(["en"], gpu=False)
+    return _reader
 
 # Default minimum confidence to keep a detection (ignore weaker boxes)
 MIN_CONFIDENCE = 0.5
@@ -31,7 +37,7 @@ def extract_text_with_boxes(image, min_confidence: float | None = None):
     floor = MIN_CONFIDENCE if min_confidence is None else float(min_confidence)
     logger.info("[OCR START] Running EasyOCR (min_confidence=%.2f)", floor)
 
-    results = reader.readtext(image)
+    results = _get_reader().readtext(image)
 
     extracted = []
 

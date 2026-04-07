@@ -15,7 +15,6 @@ from app.schemas.ingest import (
     IngestPDFResponse,
 )
 from app.services.pdf_financial_ingest import PDFFinancialIngestService
-from app.services.image_financial_ingest import process_image_financials
 
 router = APIRouter()
 ingest_service = PDFFinancialIngestService()
@@ -183,6 +182,9 @@ async def ingest_image(
         tmp_path = tmp.name
 
     try:
+        # Lazy import: avoids loading EasyOCR/torch/transformers at API startup (needed for Render).
+        from app.services.image_financial_ingest import process_image_financials
+
         result = process_image_financials(tmp_path)
         rows_raw = result.get("rows") or []
         rows = [
