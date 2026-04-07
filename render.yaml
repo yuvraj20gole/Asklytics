@@ -5,6 +5,7 @@
 # 4) In the API service, set CORS_ALLOW_ORIGINS to your web URL (e.g. https://asklytics-web.onrender.com).
 #
 # Note: Free Python tier has limited RAM; PyTorch/EasyOCR image ingest may need a larger plan or a slim build.
+# Pin Python via backend/runtime.txt — Render may default to 3.14+, where torch==2.6.0 has no wheels.
 
 services:
   - type: web
