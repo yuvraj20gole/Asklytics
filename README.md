@@ -12,8 +12,7 @@ Repository: [github.com/yuvraj20gole/Asklytics](https://github.com/yuvraj20gole/
 |------|-------------|
 | **`backend/`** | FastAPI API: JWT auth, text-to-SQL (`/ask`), PDF financial ingest, PyTorch revenue forecast, image ingest endpoint (pipeline evolving). |
 | **`web/`** | Primary UI: Vite + React + TypeScript — landing, auth, dashboard, chat, analytics, settings. |
-| **`frontend/`** | Optional **Streamlit** UI that talks to the same API (older flow; see Streamlit section below). |
-| **`shared/prompts/`** | Prompt templates for optional SQL extensions. |
+| **`shared/prompts/`** | Prompt templates. |
 | **`infra/`** | Docker / compose for packaging experiments. |
 
 ---
@@ -31,10 +30,8 @@ Repository: [github.com/yuvraj20gole/Asklytics](https://github.com/yuvraj20gole/
 ```mermaid
 flowchart TD
   U[User Browser] -->|Visits| WEB[Web UI]
-  U -->|Optional| ST[Streamlit UI]
 
   WEB -->|HTTP JWT| API[FastAPI API]
-  ST -->|HTTP JWT| API
 
   API --> AUTH[Auth]
   API --> ASK[Ask]
@@ -49,8 +46,6 @@ flowchart TD
   IMG --> DB
   SQL --> DB
   ML --> DB
-
-  PDF -. optional helper .-> OA[OpenAI optional]
 ```
 
 ## Prerequisites
@@ -133,15 +128,6 @@ npm run dev
 
 Open the URL Vite prints (usually [http://localhost:5173](http://localhost:5173)).
 
-### 5. (Optional) Streamlit frontend
-
-```bash
-source .venv/bin/activate
-streamlit run frontend/app.py
-```
-
-Set `BACKEND_URL` in the environment if the API is not at `http://localhost:8000`.
-
 ---
 
 ## Deploy the web UI (hosting)
@@ -169,14 +155,6 @@ Deploy the **FastAPI backend** separately and set the web app’s **API base URL
 3. Open the **static web** service → **Environment** → set **`VITE_API_BASE`** to that URL (no trailing slash) → **Manual Deploy**.
 4. Open the **API** service → set **`CORS_ALLOW_ORIGINS`** to your **exact** frontend origin (e.g. `https://asklytics-web.onrender.com`). Comma-separate multiple origins if needed.
 5. **`JWT_SECRET_KEY`** is auto-generated in the blueprint unless you override it in the API service.
-
-### GitHub Pages (optional)
-
-1. Repo **Settings** → **Pages** → **Build and deployment** → source **GitHub Actions**.
-2. **Settings** → **Secrets and variables** → **Actions** → add secret **`VITE_API_BASE`** (your production API URL, no trailing slash).
-3. Under **Secrets and variables** → **Actions** → tab **Variables**, optionally add **`PAGES_BASE_PATH`** (e.g. `/Asklytics/` including slashes). It must match the project path in the site URL. If you omit it, the workflow defaults to **`/Asklytics/`** (change the default in **`.github/workflows/deploy-web-pages.yml`** if your repo name differs).
-4. Push to `main` (or run workflow manually); the workflow is **`.github/workflows/deploy-web-pages.yml`**.
-5. Set **`CORS_ALLOW_ORIGINS`** on the API to your Pages URL (e.g. `https://<user>.github.io/Asklytics/`).
 
 ---
 
