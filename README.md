@@ -30,37 +30,27 @@ Repository: [github.com/yuvraj20gole/Asklytics](https://github.com/yuvraj20gole/
 
 ```mermaid
 flowchart TD
-  U[User / Browser] -->|Visits| WEB[Web UI<br>Vite + React<br>web/]
-  U -->|Optional| ST[Streamlit UI<br>frontend/]
+  U[User Browser] -->|Visits| WEB[Web UI]
+  U -->|Optional| ST[Streamlit UI]
 
-  WEB -->|HTTP (JWT)| API[FastAPI API<br>backend/]
-  ST -->|HTTP (JWT)| API
+  WEB -->|HTTP JWT| API[FastAPI API]
+  ST -->|HTTP JWT| API
 
-  subgraph API_FLOWS[API flows (prefix /api/v1)]
-    AUTH[/auth/register<br>/auth/login/] --> JWT[(JWT access token)]
-    ASK[/ask<br/>rule-based NL to SQL/] --> SQL[SQL executor + guard]
-    PDF[/ingest/pdf/] --> PARSE[PDF table parse + validation]
-    IMG[/ingest/image/] --> OCR[EasyOCR / layout fallback]
-    ML[/ml/revenue-forecast/] --> FC[PyTorch MLP forecast]
-  end
+  API --> AUTH[Auth]
+  API --> ASK[Ask]
+  API --> PDF[PDF ingest]
+  API --> IMG[Image ingest]
+  API --> ML[Forecast]
 
-  API --> AUTH
-  API --> ASK
-  API --> PDF
-  API --> IMG
-  API --> ML
+  AUTH --> JWT[JWT token]
+  ASK --> SQL[Rule based NL to SQL]
 
-  SQL --> DB[(SQLite / PostgreSQL)]
-  PARSE --> DB
-  OCR --> DB
-  FC --> DB
+  PDF --> DB[(Database)]
+  IMG --> DB
+  SQL --> DB
+  ML --> DB
 
-  subgraph OPTIONAL_AI[Optional AI helper]
-    OA[OpenAI (optional)]:::opt
-  end
-  PDF -. optional table helper .-> OA
-
-  classDef opt fill:#fff3cd,stroke:#d39e00,color:#111;
+  PDF -. optional helper .-> OA[OpenAI optional]
 ```
 
 ## Prerequisites
