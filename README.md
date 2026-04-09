@@ -30,15 +30,15 @@ Repository: [github.com/yuvraj20gole/Asklytics](https://github.com/yuvraj20gole/
 
 ```mermaid
 flowchart TD
-  U[User / Browser] -->|Visits| WEB[Web UI<br/>Vite + React<br/>`web/`]
-  U -->|Optional| ST[Streamlit UI<br/>`frontend/`]
+  U[User / Browser] -->|Visits| WEB[Web UI<br>Vite + React<br>web/]
+  U -->|Optional| ST[Streamlit UI<br>frontend/]
 
-  WEB -->|HTTP (JWT)| API[FastAPI API<br/>`backend/`]
+  WEB -->|HTTP (JWT)| API[FastAPI API<br>backend/]
   ST -->|HTTP (JWT)| API
 
-  subgraph API_FLOWS[API flows (prefix `/api/v1`)]
-    AUTH[/auth/register<br/>/auth/login/] --> JWT[(JWT access token)]
-    ASK[/ask<br/>rule-based NL → SQL/] --> SQL[SQL executor + guard]
+  subgraph API_FLOWS[API flows (prefix /api/v1)]
+    AUTH[/auth/register<br>/auth/login/] --> JWT[(JWT access token)]
+    ASK[/ask<br/>rule-based NL to SQL/] --> SQL[SQL executor + guard]
     PDF[/ingest/pdf/] --> PARSE[PDF table parse + validation]
     IMG[/ingest/image/] --> OCR[EasyOCR / layout fallback]
     ML[/ml/revenue-forecast/] --> FC[PyTorch MLP forecast]
