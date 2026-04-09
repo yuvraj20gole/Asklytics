@@ -26,6 +26,43 @@ Repository: [github.com/yuvraj20gole/Asklytics](https://github.com/yuvraj20gole/
 
 ---
 
+## System architecture & flow
+
+```mermaid
+flowchart TD
+  U[User / Browser] -->|Visits| WEB[Web UI<br/>Vite + React<br/>`web/`]
+  U -->|Optional| ST[Streamlit UI<br/>`frontend/`]
+
+  WEB -->|HTTP (JWT)| API[FastAPI API<br/>`backend/`]
+  ST -->|HTTP (JWT)| API
+
+  subgraph API_FLOWS[API flows (prefix `/api/v1`)]
+    AUTH[/auth/register<br/>/auth/login/] --> JWT[(JWT access token)]
+    ASK[/ask<br/>rule-based NL → SQL/] --> SQL[SQL executor + guard]
+    PDF[/ingest/pdf/] --> PARSE[PDF table parse + validation]
+    IMG[/ingest/image/] --> OCR[EasyOCR / layout fallback]
+    ML[/ml/revenue-forecast/] --> FC[PyTorch MLP forecast]
+  end
+
+  API --> AUTH
+  API --> ASK
+  API --> PDF
+  API --> IMG
+  API --> ML
+
+  SQL --> DB[(SQLite / PostgreSQL)]
+  PARSE --> DB
+  OCR --> DB
+  FC --> DB
+
+  subgraph OPTIONAL_AI[Optional AI helper]
+    OA[OpenAI (optional)]:::opt
+  end
+  PDF -. optional table helper .-> OA
+
+  classDef opt fill:#fff3cd,stroke:#d39e00,color:#111;
+```
+
 ## Prerequisites
 
 - **Python** 3.11+ (3.12 recommended; use a **native arm64** interpreter on Apple Silicon).
