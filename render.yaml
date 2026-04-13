@@ -4,8 +4,11 @@
 # 3) In the static service, set env VITE_API_BASE to that URL (no trailing slash) → Manual Deploy.
 # 4) In the API service, set CORS_ALLOW_ORIGINS to your web URL (e.g. https://asklytics-web.onrender.com).
 #
-# API uses Docker (backend/Dockerfile) so Python stays 3.12. Native `runtime: python` + rootDir ignored
-# backend/runtime.txt for some setups; Render still picked 3.14 — torch==2.6.0 has no cp314 wheels.
+# API: you MUST use the Docker runtime below (Python 3.12). Do not use “Python 3” native runtime — Render defaults to 3.14,
+# and torch==2.2.2 has no wheel for 3.14 (pip fails). If you refuse Docker, use Native Python with:
+#   Environment → PYTHON_VERSION = 3.12.8
+#   Root Directory = backend
+#   Build = pip install -r requirements.txt && … (same start command as Dockerfile CMD)
 
 services:
   - type: web
