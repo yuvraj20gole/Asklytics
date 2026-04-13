@@ -65,18 +65,30 @@ export function Register() {
   };
 
   return (
-    <div ref={rootRef} className="relative min-h-screen px-4 py-6">
+    <div
+      ref={rootRef}
+      className="relative min-h-screen px-4 py-6 text-slate-900 dark:text-slate-100"
+    >
       <GlassPageBackdrop tone="warm" />
       {/* Top Header */}
-      <div ref={topBarRef} className="max-w-6xl mx-auto flex items-center justify-between mb-12">
-        <Link to="/" className="text-3xl sm:text-4xl md:text-[2.5rem] font-bold text-[#1e7a5c] leading-none" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+      <div
+        ref={topBarRef}
+        className="mx-auto mb-12 flex max-w-6xl items-center justify-between"
+      >
+        <Link
+          to="/"
+          className="text-3xl font-bold leading-none text-[#1e7a5c] sm:text-4xl md:text-[2.5rem]"
+          style={{ fontFamily: "Space Grotesk, sans-serif" }}
+        >
           Asklytics
         </Link>
         <div className="flex items-center gap-2">
-          <span className="text-gray-600 text-sm">Already have an account?</span>
-          <Link 
-            to="/login" 
-            className="px-5 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+          <span className="text-sm text-gray-600 dark:text-slate-400">
+            Already have an account?
+          </span>
+          <Link
+            to="/login"
+            className="rounded-lg border border-gray-300 px-5 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             Log in
           </Link>
@@ -84,10 +96,10 @@ export function Register() {
       </div>
 
       {/* Register Card */}
-      <div ref={columnRef} className="max-w-md mx-auto">
+      <div ref={columnRef} className="mx-auto max-w-md">
         <div
           ref={cardRef}
-          className="bg-white/85 backdrop-blur-md rounded-3xl p-10 shadow-lg border border-white/60"
+          className="rounded-3xl border border-white/60 bg-white/85 p-10 shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-slate-900/80"
         >
           {/* Logo */}
           <div className="text-center mb-6">
@@ -97,15 +109,21 @@ export function Register() {
           </div>
 
           {/* Heading */}
-          <h1 className="text-center text-3xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+          <h1
+            className="mb-2 text-center text-3xl font-bold text-slate-900 dark:text-slate-50"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
             Create your account
           </h1>
-          <p className="text-center text-gray-600 mb-8">
+          <p className="mb-8 text-center text-gray-600 dark:text-slate-400">
             Start analyzing your financial data in minutes.
           </p>
 
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            <div
+              className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+              role="alert"
+            >
               {error}
             </div>
           )}
@@ -114,62 +132,74 @@ export function Register() {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Company Email */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-slate-300">
                 Company Email
               </label>
               <input
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 bg-[#e8e4dc] border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] text-gray-900 placeholder:text-gray-500"
+                className="w-full rounded-lg border-0 bg-[#e8e4dc] px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] dark:border dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
                 placeholder="you@company.com"
               />
-              {errors.email && <p className="text-red-600 text-sm mt-1">{errors.email}</p>}
+              {errors.email && (
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.email}</p>
+              )}
             </div>
 
             {/* Username */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-slate-300">
                 Username
               </label>
               <input
                 type="text"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                className="w-full px-4 py-3 bg-[#e8e4dc] border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] text-gray-900 placeholder:text-gray-500"
+                className="w-full rounded-lg border-0 bg-[#e8e4dc] px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] dark:border dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
                 placeholder="e.g. alexchen"
               />
-              {errors.username && <p className="text-red-600 text-sm mt-1">{errors.username}</p>}
+              {errors.username && (
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.username}</p>
+              )}
             </div>
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-slate-300">
                 Password
               </label>
               <input
                 type="password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-4 py-3 bg-[#e8e4dc] border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] text-gray-900 placeholder:text-gray-500"
+                className="w-full rounded-lg border-0 bg-[#e8e4dc] px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] dark:border dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
                 placeholder="Minimum 8 characters"
               />
-              {errors.password && <p className="text-red-600 text-sm mt-1">{errors.password}</p>}
+              {errors.password && (
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.password}</p>
+              )}
             </div>
 
             {/* Confirm Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-slate-300">
                 Confirm Password
               </label>
               <input
                 type="password"
                 value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                className="w-full px-4 py-3 bg-[#e8e4dc] border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] text-gray-900 placeholder:text-gray-500"
+                onChange={(e) =>
+                  setFormData({ ...formData, confirmPassword: e.target.value })
+                }
+                className="w-full rounded-lg border-0 bg-[#e8e4dc] px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] dark:border dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
                 placeholder="Re-enter password"
               />
-              {errors.confirmPassword && <p className="text-red-600 text-sm mt-1">{errors.confirmPassword}</p>}
+              {errors.confirmPassword && (
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  {errors.confirmPassword}
+                </p>
+              )}
             </div>
 
             {/* Submit Button */}
@@ -184,19 +214,28 @@ export function Register() {
 
           {/* Terms and Login Link */}
           <div className="mt-6 text-center">
-            <p className="text-xs text-gray-500 mb-3">
+            <p className="mb-3 text-xs text-gray-500 dark:text-slate-500">
               By registering you agree to our{" "}
-              <Link to="#" className="text-[#1e7a5c] hover:underline">
+              <Link
+                to="#"
+                className="text-[#1e7a5c] hover:underline dark:text-emerald-400"
+              >
                 Terms
               </Link>{" "}
               and{" "}
-              <Link to="#" className="text-[#1e7a5c] hover:underline">
+              <Link
+                to="#"
+                className="text-[#1e7a5c] hover:underline dark:text-emerald-400"
+              >
                 Privacy Policy
               </Link>
             </p>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-slate-400">
               Already have an account?{" "}
-              <Link to="/login" className="text-[#1e7a5c] font-medium hover:underline">
+              <Link
+                to="/login"
+                className="font-medium text-[#1e7a5c] hover:underline dark:text-emerald-400"
+              >
                 Log in
               </Link>
             </p>

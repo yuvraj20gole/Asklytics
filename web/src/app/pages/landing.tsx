@@ -68,7 +68,7 @@ export function Landing() {
   });
 
   return (
-    <div ref={rootRef} className="relative min-h-screen text-slate-900">
+    <div ref={rootRef} className="relative min-h-screen text-slate-900 dark:text-slate-100">
       <GlassPageBackdrop tone="mint" />
       {/* Header */}
       <header
@@ -81,13 +81,22 @@ export function Landing() {
           </Link>
           
           <nav className="hidden md:flex items-center gap-8">
-            <a href="#features" className="text-gray-600 hover:text-gray-900 transition-colors">Features</a>
-            <a href="#how-it-works" className="text-gray-600 hover:text-gray-900 transition-colors">How it works</a>
-            <a href="#about" className="text-gray-600 hover:text-gray-900 transition-colors">About</a>
+            <a href="#features" className="text-gray-600 hover:text-gray-900 transition-colors dark:text-slate-300 dark:hover:text-white">
+              Features
+            </a>
+            <a href="#how-it-works" className="text-gray-600 hover:text-gray-900 transition-colors dark:text-slate-300 dark:hover:text-white">
+              How it works
+            </a>
+            <a href="#about" className="text-gray-600 hover:text-gray-900 transition-colors dark:text-slate-300 dark:hover:text-white">
+              About
+            </a>
           </nav>
           
           <div className="flex items-center gap-4">
-            <Link to="/login" className="text-gray-700 hover:text-gray-900 transition-colors">
+            <Link
+              to="/login"
+              className="text-gray-700 hover:text-gray-900 transition-colors dark:text-slate-300 dark:hover:text-white"
+            >
               Log in
             </Link>
             <Link 
@@ -102,12 +111,19 @@ export function Landing() {
 
       {/* Hero Section */}
       <section ref={heroSectionRef} className="max-w-7xl mx-auto px-6 py-20 text-center">
-        <div ref={heroBadgeRef} className="inline-flex items-center gap-2 px-4 py-2 bg-[#d4f4e7] rounded-full text-sm text-[#1e7a5c] mb-8">
+        <div
+          ref={heroBadgeRef}
+          className="mb-8 inline-flex items-center gap-2 rounded-full border border-emerald-200/80 bg-[#d4f4e7] px-4 py-2 text-sm text-[#1e7a5c] dark:border-emerald-800/60 dark:bg-emerald-950/55 dark:text-emerald-300"
+        >
           <span className="text-lg">🤖</span>
           <span className="font-medium">AI-Powered Financial Intelligence</span>
         </div>
         
-        <h1 ref={heroHeadingRef} className="text-6xl md:text-7xl font-bold mb-6 leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
+        <h1
+          ref={heroHeadingRef}
+          className="mb-6 text-6xl font-bold leading-tight text-slate-900 dark:text-slate-50 md:text-7xl"
+          style={{ fontFamily: 'var(--font-display)' }}
+        >
           Ask your data.
           <br />
           Get <em className="italic text-[#22c55e]">answers</em>, not
@@ -115,7 +131,10 @@ export function Landing() {
           spreadsheets.
         </h1>
         
-        <p ref={heroSubRef} className="text-xl text-gray-600 max-w-2xl mx-auto mb-10 leading-relaxed">
+        <p
+          ref={heroSubRef}
+          className="mx-auto mb-10 max-w-2xl text-xl leading-relaxed text-gray-600 dark:text-slate-400"
+        >
           Upload any financial statement — CSV, Excel, or PDF — and ask questions in plain English. 
           Asklytics turns your data into instant SQL queries, tables, and visualisations.
         </p>
@@ -127,9 +146,9 @@ export function Landing() {
           >
             Start for free →
           </Link>
-          <Link 
-            to="/login" 
-            className="px-8 py-3 text-gray-700 hover:text-gray-900 transition-colors text-lg"
+          <Link
+            to="/login"
+            className="px-8 py-3 text-lg text-gray-700 transition-colors hover:text-gray-900 dark:text-slate-300 dark:hover:text-white"
           >
             Sign in
           </Link>
@@ -144,8 +163,13 @@ export function Landing() {
             <div className="w-12 h-12 bg-[#e0f2fe] rounded-xl flex items-center justify-center mb-4">
               <Upload className="w-6 h-6 text-[#0284c7]" />
             </div>
-            <h3 className="font-bold text-lg mb-2" style={{ fontFamily: 'var(--font-display)' }}>Upload any format</h3>
-            <p className="text-gray-600 text-sm">
+            <h3
+              className="mb-2 text-lg font-bold text-slate-900 dark:text-slate-100"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              Upload any format
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-slate-400">
               CSV, Excel, or PDF financial statements — upload multiple files at once.
             </p>
           </div>
@@ -157,8 +181,13 @@ export function Landing() {
             <div className="w-12 h-12 bg-[#dcfce7] rounded-xl flex items-center justify-center mb-4">
               <MessageSquare className="w-6 h-6 text-[#22c55e]" />
             </div>
-            <h3 className="font-bold text-lg mb-2" style={{ fontFamily: 'var(--font-display)' }}>Ask in plain English</h3>
-            <p className="text-gray-600 text-sm">
+            <h3
+              className="mb-2 text-lg font-bold text-slate-900 dark:text-slate-100"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              Ask in plain English
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-slate-400">
               "Q1 profit?" "What was Q1 profit?" Just get a concise answer instantly.
             </p>
           </div>
@@ -170,8 +199,13 @@ export function Landing() {
             <div className="w-12 h-12 bg-[#fef3c7] rounded-xl flex items-center justify-center mb-4">
               <BarChart3 className="w-6 h-6 text-[#f59e0b]" />
             </div>
-            <h3 className="font-bold text-lg mb-2" style={{ fontFamily: 'var(--font-display)' }}>Auto-visualisation</h3>
-            <p className="text-gray-600 text-sm">
+            <h3
+              className="mb-2 text-lg font-bold text-slate-900 dark:text-slate-100"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              Auto-visualisation
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-slate-400">
               Every query auto-selects the best chart — bar, line, area, or pie.
             </p>
           </div>
@@ -183,8 +217,13 @@ export function Landing() {
             <div className="w-12 h-12 bg-[#fee2e2] rounded-xl flex items-center justify-center mb-4">
               <Lock className="w-6 h-6 text-[#ef4444]" />
             </div>
-            <h3 className="font-bold text-lg mb-2" style={{ fontFamily: 'var(--font-display)' }}>Secure by design</h3>
-            <p className="text-gray-600 text-sm">
+            <h3
+              className="mb-2 text-lg font-bold text-slate-900 dark:text-slate-100"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              Secure by design
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-slate-400">
               Your data stays in your session. Nothing stored without consent.
             </p>
           </div>
@@ -199,10 +238,13 @@ export function Landing() {
       >
         <div ref={howInnerRef} className="relative z-10 max-w-7xl mx-auto px-6">
           <div ref={howIntroRef} className="text-center mb-12">
-            <h2 className="text-4xl md:text-5xl font-bold mb-4" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+            <h2
+              className="mb-4 text-4xl font-bold text-slate-900 dark:text-slate-50 md:text-5xl"
+              style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+            >
               How Asklytics works
             </h2>
-            <p className="text-xl text-gray-600">
+            <p className="text-xl text-gray-600 dark:text-slate-400">
               Three steps from raw data to business insight.
             </p>
           </div>
@@ -212,9 +254,14 @@ export function Landing() {
               ref={stepCard0Ref}
               className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/30 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/45 before:to-transparent before:opacity-55 dark:before:from-white/12"
             >
-              <div className="text-sm text-gray-500 mb-3">01</div>
-              <h3 className="text-2xl font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Upload your file</h3>
-              <p className="text-gray-600">
+              <div className="mb-3 text-sm text-gray-500 dark:text-slate-500">01</div>
+              <h3
+                className="mb-3 text-2xl font-bold text-slate-900 dark:text-slate-100"
+                style={{ fontFamily: 'var(--font-display)' }}
+              >
+                Upload your file
+              </h3>
+              <p className="text-gray-600 dark:text-slate-400">
                 CSV, Excel, or PDF financial statement. Multiple files supported.
               </p>
             </div>
@@ -223,9 +270,14 @@ export function Landing() {
               ref={stepCard1Ref}
               className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/30 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/45 before:to-transparent before:opacity-55 dark:before:from-white/12"
             >
-              <div className="text-sm text-gray-500 mb-3">02</div>
-              <h3 className="text-2xl font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Ask a question</h3>
-              <p className="text-gray-600">
+              <div className="mb-3 text-sm text-gray-500 dark:text-slate-500">02</div>
+              <h3
+                className="mb-3 text-2xl font-bold text-slate-900 dark:text-slate-100"
+                style={{ fontFamily: 'var(--font-display)' }}
+              >
+                Ask a question
+              </h3>
+              <p className="text-gray-600 dark:text-slate-400">
                 Type anything — revenues, trends, comparisons, profit margins.
               </p>
             </div>
@@ -234,16 +286,24 @@ export function Landing() {
               ref={stepCard2Ref}
               className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/30 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/45 before:to-transparent before:opacity-55 dark:before:from-white/12"
             >
-              <div className="text-sm text-gray-500 mb-3">03</div>
-              <h3 className="text-2xl font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Get instant insight</h3>
-              <p className="text-gray-600">
+              <div className="mb-3 text-sm text-gray-500 dark:text-slate-500">03</div>
+              <h3
+                className="mb-3 text-2xl font-bold text-slate-900 dark:text-slate-100"
+                style={{ fontFamily: 'var(--font-display)' }}
+              >
+                Get instant insight
+              </h3>
+              <p className="text-gray-600 dark:text-slate-400">
                 AI returns SQL, a data table, plain-English explanation, and a chart.
               </p>
             </div>
           </div>
 
-          <div ref={howMidRef} className="text-center mb-12">
-            <h2 className="text-4xl md:text-5xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+          <div ref={howMidRef} className="mb-12 text-center">
+            <h2
+              className="text-4xl font-bold text-slate-900 dark:text-slate-50 md:text-5xl"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
               Your finances, finally <span className="italic text-[#22c55e]">readable</span>
             </h2>
           </div>
@@ -259,7 +319,7 @@ export function Landing() {
                 <div className="w-3 h-3 rounded-full bg-[#ff5f57]"></div>
                 <div className="w-3 h-3 rounded-full bg-[#febc2e]"></div>
                 <div className="w-3 h-3 rounded-full bg-[#28c840]"></div>
-                <div className="ml-4 flex-1 rounded-lg border border-white/20 bg-white/40 px-4 py-2 text-center text-sm text-gray-400 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
+                <div className="ml-4 flex-1 rounded-lg border border-white/20 bg-white/40 px-4 py-2 text-center text-sm text-gray-400 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10 dark:text-slate-500">
                   asklytics.io/dashboard
                 </div>
               </div>
@@ -269,29 +329,57 @@ export function Landing() {
                 {/* Metric Cards */}
                 <div className="grid grid-cols-4 gap-4 mb-8">
                   <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
-                    <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">TOTAL REVENUE</div>
-                    <div className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>$6.93M</div>
+                    <div className="mb-2 text-xs font-medium tracking-wider text-gray-500 dark:text-slate-400">
+                      TOTAL REVENUE
+                    </div>
+                    <div
+                      className="mb-2 text-3xl font-bold text-slate-900 dark:text-slate-50"
+                      style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+                    >
+                      $6.93M
+                    </div>
                     <div className="text-sm text-[#22c55e] flex items-center gap-1 font-medium">
                       ↑ +22.4%
                     </div>
                   </div>
                   <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
-                    <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">NET PROFIT</div>
-                    <div className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>$2.44M</div>
+                    <div className="mb-2 text-xs font-medium tracking-wider text-gray-500 dark:text-slate-400">
+                      NET PROFIT
+                    </div>
+                    <div
+                      className="mb-2 text-3xl font-bold text-slate-900 dark:text-slate-50"
+                      style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+                    >
+                      $2.44M
+                    </div>
                     <div className="text-sm text-[#22c55e] flex items-center gap-1 font-medium">
                       ↑ +31.2%
                     </div>
                   </div>
                   <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
-                    <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">EXPENSES</div>
-                    <div className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>$4.49M</div>
+                    <div className="mb-2 text-xs font-medium tracking-wider text-gray-500 dark:text-slate-400">
+                      EXPENSES
+                    </div>
+                    <div
+                      className="mb-2 text-3xl font-bold text-slate-900 dark:text-slate-50"
+                      style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+                    >
+                      $4.49M
+                    </div>
                     <div className="text-sm text-[#22c55e] flex items-center gap-1 font-medium">
                       ↑ +11.8%
                     </div>
                   </div>
                   <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
-                    <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">MARGIN</div>
-                    <div className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>35.2%</div>
+                    <div className="mb-2 text-xs font-medium tracking-wider text-gray-500 dark:text-slate-400">
+                      MARGIN
+                    </div>
+                    <div
+                      className="mb-2 text-3xl font-bold text-slate-900 dark:text-slate-50"
+                      style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+                    >
+                      35.2%
+                    </div>
                     <div className="text-sm text-[#22c55e] flex items-center gap-1 font-medium">
                       ↑ +3.1pp
                     </div>
@@ -302,13 +390,21 @@ export function Landing() {
                 <div className="grid grid-cols-2 gap-6">
                   {/* Line Chart */}
                   <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-6 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
-                    <div className="text-xs font-medium text-gray-500 mb-6 tracking-wider">REVENUE VS EXPENSES</div>
+                    <div className="mb-6 text-xs font-medium tracking-wider text-gray-500 dark:text-slate-400">
+                      REVENUE VS EXPENSES
+                    </div>
                     <div className="relative h-48">
-                      <svg width="100%" height="100%" viewBox="0 0 400 180" preserveAspectRatio="none">
+                      <svg
+                        width="100%"
+                        height="100%"
+                        viewBox="0 0 400 180"
+                        preserveAspectRatio="none"
+                        className="text-gray-200 dark:text-slate-600"
+                      >
                         {/* Grid lines */}
-                        <line x1="0" y1="45" x2="400" y2="45" stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 4" />
-                        <line x1="0" y1="90" x2="400" y2="90" stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 4" />
-                        <line x1="0" y1="135" x2="400" y2="135" stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 4" />
+                        <line x1="0" y1="45" x2="400" y2="45" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" />
+                        <line x1="0" y1="90" x2="400" y2="90" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" />
+                        <line x1="0" y1="135" x2="400" y2="135" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" />
                         
                         {/* Revenue line (green) */}
                         <path 
@@ -331,7 +427,7 @@ export function Landing() {
                       </svg>
                       
                       {/* X-axis labels */}
-                      <div className="flex justify-between mt-3 text-xs text-gray-400">
+                      <div className="mt-3 flex justify-between text-xs text-gray-400 dark:text-slate-500">
                         <span>Feb</span>
                         <span>Mar</span>
                         <span>Apr</span>
@@ -343,7 +439,9 @@ export function Landing() {
 
                   {/* Donut Chart */}
                   <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-6 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
-                    <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">REVENUE MIX</div>
+                    <div className="mb-2 text-xs font-medium tracking-wider text-gray-500 dark:text-slate-400">
+                      REVENUE MIX
+                    </div>
                     <ResponsiveContainer width="100%" height={160}>
                       <PieChart>
                         <Pie
@@ -373,10 +471,14 @@ export function Landing() {
       <section
         ref={aboutSectionRef}
         id="about"
-        className="relative overflow-hidden bg-gradient-to-b from-transparent via-slate-100/35 to-[#e8edf0]/60 py-20 dark:via-neutral-900/25 dark:to-neutral-950/35"
+        className="relative overflow-hidden bg-gradient-to-b from-transparent via-slate-100/35 to-[#e8edf0]/60 py-20 dark:from-slate-950 dark:via-slate-900/80 dark:to-slate-950"
       >
         <div className="max-w-7xl mx-auto px-6">
-          <h2 ref={aboutHeadingRef} className="text-4xl md:text-5xl font-bold text-center mb-12" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+          <h2
+            ref={aboutHeadingRef}
+            className="mb-12 text-center text-4xl font-bold text-slate-900 dark:text-slate-50 md:text-5xl"
+            style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+          >
             Trusted by financial teams
           </h2>
 
@@ -386,21 +488,21 @@ export function Landing() {
               className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-8 text-center shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/50 before:to-transparent before:opacity-55 dark:before:from-white/12"
             >
               <div className="text-5xl font-bold text-[#22c55e] mb-2">2.4M+</div>
-              <div className="text-gray-600">Queries answered</div>
+              <div className="text-gray-600 dark:text-slate-400">Queries answered</div>
             </div>
             <div
               ref={statCard1Ref}
               className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-8 text-center shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/50 before:to-transparent before:opacity-55 dark:before:from-white/12"
             >
               <div className="text-5xl font-bold text-[#22c55e] mb-2">98%</div>
-              <div className="text-gray-600">Accuracy rate</div>
+              <div className="text-gray-600 dark:text-slate-400">Accuracy rate</div>
             </div>
             <div
               ref={statCard2Ref}
               className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-8 text-center shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/50 before:to-transparent before:opacity-55 dark:before:from-white/12"
             >
               <div className="text-5xl font-bold text-[#22c55e] mb-2">&lt;2s</div>
-              <div className="text-gray-600">Average response time</div>
+              <div className="text-gray-600 dark:text-slate-400">Average response time</div>
             </div>
           </div>
 
@@ -431,13 +533,28 @@ export function Landing() {
           <div className="text-3xl sm:text-4xl font-bold text-[#1e7a5c] leading-none" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
             Asklytics
           </div>
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-gray-600 dark:text-slate-400">
             © 2025 Asklytics. All rights reserved.
           </div>
           <div className="flex items-center gap-6">
-            <a href="#privacy" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">Privacy</a>
-            <a href="#terms" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">Terms</a>
-            <a href="#contact" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">Contact</a>
+            <a
+              href="#privacy"
+              className="text-sm text-gray-600 transition-colors hover:text-gray-900 dark:text-slate-400 dark:hover:text-slate-200"
+            >
+              Privacy
+            </a>
+            <a
+              href="#terms"
+              className="text-sm text-gray-600 transition-colors hover:text-gray-900 dark:text-slate-400 dark:hover:text-slate-200"
+            >
+              Terms
+            </a>
+            <a
+              href="#contact"
+              className="text-sm text-gray-600 transition-colors hover:text-gray-900 dark:text-slate-400 dark:hover:text-slate-200"
+            >
+              Contact
+            </a>
           </div>
         </div>
       </footer>

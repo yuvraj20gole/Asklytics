@@ -57,18 +57,28 @@ export function Login() {
   };
 
   return (
-    <div ref={rootRef} className="relative min-h-screen px-4 py-6">
+    <div
+      ref={rootRef}
+      className="relative min-h-screen px-4 py-6 text-slate-900 dark:text-slate-100"
+    >
       <GlassPageBackdrop tone="warm" />
       {/* Top Header */}
-      <div ref={topBarRef} className="max-w-6xl mx-auto flex items-center justify-between mb-12">
-        <Link to="/" className="text-3xl sm:text-4xl md:text-[2.5rem] font-bold text-[#1e7a5c] leading-none" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+      <div
+        ref={topBarRef}
+        className="mx-auto mb-12 flex max-w-6xl items-center justify-between"
+      >
+        <Link
+          to="/"
+          className="text-3xl font-bold leading-none text-[#1e7a5c] sm:text-4xl md:text-[2.5rem]"
+          style={{ fontFamily: "Space Grotesk, sans-serif" }}
+        >
           Asklytics
         </Link>
         <div className="flex items-center gap-2">
-          <span className="text-gray-600 text-sm">No account?</span>
-          <Link 
-            to="/register" 
-            className="px-4 py-2 bg-[#1e7a5c] text-white rounded-lg text-sm hover:bg-[#196a4f] transition-colors"
+          <span className="text-sm text-gray-600 dark:text-slate-400">No account?</span>
+          <Link
+            to="/register"
+            className="rounded-lg bg-[#1e7a5c] px-4 py-2 text-sm text-white transition-colors hover:bg-[#196a4f]"
           >
             Register free
           </Link>
@@ -76,10 +86,10 @@ export function Login() {
       </div>
 
       {/* Login Card */}
-      <div ref={columnRef} className="max-w-md mx-auto">
+      <div ref={columnRef} className="mx-auto max-w-md">
         <div
           ref={cardRef}
-          className="bg-white/85 backdrop-blur-md rounded-3xl p-10 shadow-lg border border-white/60"
+          className="rounded-3xl border border-white/60 bg-white/85 p-10 shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-slate-900/80"
         >
           {/* Logo */}
           <div className="text-center mb-6">
@@ -89,36 +99,48 @@ export function Login() {
           </div>
 
           {/* Heading */}
-          <h1 className="text-center text-3xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+          <h1
+            className="mb-2 text-center text-3xl font-bold text-slate-900 dark:text-slate-50"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
             Welcome back
           </h1>
-          <p className="text-center text-gray-600 mb-8">
+          <p className="mb-8 text-center text-gray-600 dark:text-slate-400">
             Log in to your Asklytics dashboard
           </p>
 
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            <div
+              className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+              role="alert"
+            >
               {error}
             </div>
           )}
 
           {/* Demo Account Section */}
-          <div className="bg-[#e8e4dc] rounded-xl p-5 mb-6">
-            <div className="text-xs font-semibold text-gray-700 mb-3 tracking-wide">DEMO ACCOUNT</div>
-            <div className="flex items-center justify-between mb-3">
+          <div className="mb-6 rounded-xl border border-stone-200/80 bg-[#e8e4dc] p-5 dark:border-slate-600 dark:bg-slate-800/90">
+            <div className="mb-3 text-xs font-semibold tracking-wide text-gray-700 dark:text-slate-400">
+              DEMO ACCOUNT
+            </div>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <span className="text-sm text-gray-600">Email:</span>
-                <span className="ml-2 text-sm font-medium">admin@example.com</span>
+                <span className="text-sm text-gray-600 dark:text-slate-400">Email:</span>
+                <span className="ml-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                  admin@example.com
+                </span>
               </div>
               <div>
-                <span className="text-sm text-gray-600">Password:</span>
-                <span className="ml-2 text-sm font-medium">admin123</span>
+                <span className="text-sm text-gray-600 dark:text-slate-400">Password:</span>
+                <span className="ml-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                  admin123
+                </span>
               </div>
             </div>
             <button
               type="button"
               onClick={fillDemoCredentials}
-              className="w-full px-4 py-2 bg-[#d4f4e7] text-[#1e7a5c] rounded-lg text-sm font-medium hover:bg-[#c0edd9] transition-colors"
+              className="w-full rounded-lg bg-[#d4f4e7] px-4 py-2 text-sm font-medium text-[#1e7a5c] transition-colors hover:bg-[#c0edd9] dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
             >
               Fill demo credentials
             </button>
@@ -128,7 +150,7 @@ export function Login() {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-slate-300">
                 Email or Username
               </label>
               <input
@@ -137,18 +159,21 @@ export function Login() {
                 autoComplete="username"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 bg-[#e8e4dc] border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] text-gray-900 placeholder:text-gray-500"
+                className="w-full rounded-lg border-0 bg-[#e8e4dc] px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] dark:border dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
                 placeholder="you@company.com or username"
               />
             </div>
 
             {/* Password Input */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700">
+              <div className="mb-2 flex items-center justify-between">
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">
                   Password
                 </label>
-                <Link to="#" className="text-sm text-[#1e7a5c] hover:underline">
+                <Link
+                  to="#"
+                  className="text-sm text-[#1e7a5c] hover:underline dark:text-emerald-400"
+                >
                   Forgot password?
                 </Link>
               </div>
@@ -158,7 +183,7 @@ export function Login() {
                 autoComplete="current-password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-4 py-3 bg-[#e8e4dc] border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] text-gray-900 placeholder:text-gray-500"
+                className="w-full rounded-lg border-0 bg-[#e8e4dc] px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1e7a5c] dark:border dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
                 placeholder="Enter your password"
               />
             </div>
@@ -174,9 +199,12 @@ export function Login() {
           </form>
 
           {/* Bottom Link */}
-          <p className="text-center text-sm text-gray-600 mt-6">
+          <p className="mt-6 text-center text-sm text-gray-600 dark:text-slate-400">
             No account?{" "}
-            <Link to="/register" className="text-[#1e7a5c] font-medium hover:underline">
+            <Link
+              to="/register"
+              className="font-medium text-[#1e7a5c] hover:underline dark:text-emerald-400"
+            >
               Register for free
             </Link>
           </p>
