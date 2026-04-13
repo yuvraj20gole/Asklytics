@@ -3,18 +3,35 @@ import { Clock, CheckCircle2, Database, AlertCircle } from "lucide-react";
 import { useHistory } from "../contexts/history-context";
 import { HistoryDetailModal } from "../components/history-detail-modal";
 import { format } from "date-fns";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useMotionPageEffects } from "../hooks/use-motion-page-effects";
 
 export function History() {
   const { history } = useHistory();
   const [selectedItem, setSelectedItem] = useState<typeof history[0] | null>(null);
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
+  const rootRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const titleBlockRef = useRef<HTMLDivElement>(null);
+  const emptyStateRef = useRef<HTMLDivElement>(null);
+  const listParentRef = useRef<HTMLDivElement>(null);
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
+  useMotionPageEffects({
+    root: rootRef,
+    header: navRef,
+    hero: { section: mainRef, layers: [titleBlockRef] },
+    ctaBlocks: [emptyStateRef],
+    listItemParents: [listParentRef],
+    parallaxInners: [{ section: rootRef, inner: mainRef }],
+  });
+
+  return (
+    <div ref={rootRef} className="min-h-screen bg-background">
+      <Navbar ref={navRef} />
+
+      <div ref={mainRef} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div ref={titleBlockRef} className="mb-8">
           <h1 className="mb-2">Query History</h1>
           <p className="text-muted-foreground">
             View and reopen your past queries
@@ -22,7 +39,10 @@ export function History() {
         </div>
 
         {history.length === 0 ? (
-          <div className="bg-card border border-border rounded-xl p-12 text-center">
+          <div
+            ref={emptyStateRef}
+            className="bg-card border border-border rounded-xl p-12 text-center"
+          >
             <div className="w-16 h-16 rounded-full bg-muted mx-auto mb-4 flex items-center justify-center">
               <AlertCircle className="w-8 h-8 text-muted-foreground" />
             </div>
@@ -32,7 +52,7 @@ export function History() {
             </p>
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div ref={listParentRef} className="grid gap-4">
             {history.map((item) => (
               <div
                 key={item.id}

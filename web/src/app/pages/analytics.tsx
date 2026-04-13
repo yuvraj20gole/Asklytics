@@ -30,7 +30,8 @@ import {
   RotateCcw,
   Calendar,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useMotionPageEffects } from "../hooks/use-motion-page-effects";
 import { useChartColors } from "../hooks/use-chart-colors";
 import {
   aggregateFactsRevenueOtherIncomeByPeriod,
@@ -48,6 +49,28 @@ export function Analytics() {
   const { history } = useHistory();
   const [activeTab, setActiveTab] = useState("overview");
   const colors = useChartColors();
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const kpiGridRef = useRef<HTMLDivElement>(null);
+  const kpi0Ref = useRef<HTMLDivElement>(null);
+  const kpi1Ref = useRef<HTMLDivElement>(null);
+  const kpi2Ref = useRef<HTMLDivElement>(null);
+  const kpi3Ref = useRef<HTMLDivElement>(null);
+
+  useMotionPageEffects({
+    root: rootRef,
+    header: navRef,
+    hero: { section: shellRef, layers: [headRef] },
+    introBlocks: [tabsRef],
+    cardGroups: [
+      { grid: kpiGridRef, cards: [kpi0Ref, kpi1Ref, kpi2Ref, kpi3Ref] },
+    ],
+    parallaxInners: [{ section: rootRef, inner: shellRef }],
+  });
 
   // Generate analytics from uploaded data
   const analytics = useMemo(() => {
@@ -371,11 +394,14 @@ export function Analytics() {
 
   if (!isDataLoaded) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900">
-        <Navbar />
+      <div ref={rootRef} className="min-h-screen bg-white dark:bg-gray-900">
+        <Navbar ref={navRef} />
 
-        <div className="max-w-[1600px] mx-auto px-6 py-8">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-12 text-center shadow-sm">
+        <div ref={shellRef} className="max-w-[1600px] mx-auto px-6 py-8">
+          <div
+            ref={headRef}
+            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-12 text-center shadow-sm"
+          >
             <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 mx-auto mb-4 flex items-center justify-center">
               <AlertCircle className="w-8 h-8 text-gray-400 dark:text-gray-500" />
             </div>
@@ -391,11 +417,14 @@ export function Analytics() {
 
   if (!analytics) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900">
-        <Navbar />
+      <div ref={rootRef} className="min-h-screen bg-white dark:bg-gray-900">
+        <Navbar ref={navRef} />
 
-        <div className="max-w-[1600px] mx-auto px-6 py-8">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-12 text-center shadow-sm">
+        <div ref={shellRef} className="max-w-[1600px] mx-auto px-6 py-8">
+          <div
+            ref={headRef}
+            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-12 text-center shadow-sm"
+          >
             <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 mx-auto mb-4 flex items-center justify-center">
               <AlertCircle className="w-8 h-8 text-gray-400 dark:text-gray-500" />
             </div>
@@ -417,12 +446,12 @@ export function Analytics() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Navbar />
+    <div ref={rootRef} className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <Navbar ref={navRef} />
 
-      <div className="max-w-[1600px] mx-auto px-6 py-8">
+      <div ref={shellRef} className="max-w-[1600px] mx-auto px-6 py-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div ref={headRef} className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-gray-900 dark:text-gray-100 text-2xl mb-1 font-semibold">Financial Data Analysis</h1>
             <p className="text-gray-600 dark:text-gray-400 text-sm">
@@ -437,7 +466,7 @@ export function Analytics() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+        <div ref={tabsRef} className="flex gap-2 mb-6 overflow-x-auto pb-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -458,8 +487,11 @@ export function Analytics() {
           {activeTab === "overview" && (
             <>
               {/* KPI Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-gradient-to-br from-blue-50 to-white dark:from-blue-900/20 dark:to-gray-800 border border-blue-100 dark:border-blue-900/50 rounded-xl p-6 shadow-sm">
+              <div ref={kpiGridRef} className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div
+                  ref={kpi0Ref}
+                  className="bg-gradient-to-br from-blue-50 to-white dark:from-blue-900/20 dark:to-gray-800 border border-blue-100 dark:border-blue-900/50 rounded-xl p-6 shadow-sm"
+                >
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center shadow-sm">
                       <DollarSign className="w-6 h-6 text-white" />
@@ -472,7 +504,10 @@ export function Analytics() {
                   <p className="text-gray-500 dark:text-gray-500 text-xs">Total amount</p>
                 </div>
 
-                <div className="bg-gradient-to-br from-green-50 to-white dark:from-green-900/20 dark:to-gray-800 border border-green-100 dark:border-green-900/50 rounded-xl p-6 shadow-sm">
+                <div
+                  ref={kpi1Ref}
+                  className="bg-gradient-to-br from-green-50 to-white dark:from-green-900/20 dark:to-gray-800 border border-green-100 dark:border-green-900/50 rounded-xl p-6 shadow-sm"
+                >
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-12 h-12 rounded-xl bg-[#22c55e] flex items-center justify-center shadow-sm">
                       <TrendingUp className="w-6 h-6 text-white" />
@@ -491,7 +526,10 @@ export function Analytics() {
                   </p>
                 </div>
 
-                <div className="bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-800 border border-purple-100 dark:border-purple-900/50 rounded-xl p-6 shadow-sm">
+                <div
+                  ref={kpi2Ref}
+                  className="bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-800 border border-purple-100 dark:border-purple-900/50 rounded-xl p-6 shadow-sm"
+                >
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-12 h-12 rounded-xl bg-purple-500 flex items-center justify-center shadow-sm">
                       <Users className="w-6 h-6 text-white" />
@@ -504,7 +542,10 @@ export function Analytics() {
                   <p className="text-gray-500 dark:text-gray-500 text-xs">Total categories</p>
                 </div>
 
-                <div className="bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-900/20 dark:to-gray-800 border border-cyan-100 dark:border-cyan-900/50 rounded-xl p-6 shadow-sm">
+                <div
+                  ref={kpi3Ref}
+                  className="bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-900/20 dark:to-gray-800 border border-cyan-100 dark:border-cyan-900/50 rounded-xl p-6 shadow-sm"
+                >
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-12 h-12 rounded-xl bg-cyan-500 flex items-center justify-center shadow-sm">
                       <Activity className="w-6 h-6 text-white" />

@@ -1,9 +1,23 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { register as apiRegister } from "@/lib/api";
+import { GlassPageBackdrop } from "../components/glass-page-backdrop";
+import { useMotionPageEffects } from "../hooks/use-motion-page-effects";
 
 export function Register() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useMotionPageEffects({
+    root: rootRef,
+    header: topBarRef,
+    ctaBlocks: [cardRef],
+    parallaxInners: [{ section: rootRef, inner: columnRef }],
+  });
+
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: "",
@@ -51,10 +65,11 @@ export function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-[#ede8e0] px-4 py-6">
+    <div ref={rootRef} className="relative min-h-screen px-4 py-6">
+      <GlassPageBackdrop tone="warm" />
       {/* Top Header */}
-      <div className="max-w-6xl mx-auto flex items-center justify-between mb-12">
-        <Link to="/" className="text-2xl font-bold text-[#1e7a5c]" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+      <div ref={topBarRef} className="max-w-6xl mx-auto flex items-center justify-between mb-12">
+        <Link to="/" className="text-3xl sm:text-4xl md:text-[2.5rem] font-bold text-[#1e7a5c] leading-none" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
           Asklytics
         </Link>
         <div className="flex items-center gap-2">
@@ -69,11 +84,14 @@ export function Register() {
       </div>
 
       {/* Register Card */}
-      <div className="max-w-md mx-auto">
-        <div className="bg-white rounded-3xl p-10 shadow-lg">
+      <div ref={columnRef} className="max-w-md mx-auto">
+        <div
+          ref={cardRef}
+          className="bg-white/85 backdrop-blur-md rounded-3xl p-10 shadow-lg border border-white/60"
+        >
           {/* Logo */}
           <div className="text-center mb-6">
-            <div className="text-2xl font-bold text-[#1e7a5c]" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+            <div className="text-3xl sm:text-4xl font-bold text-[#1e7a5c] leading-none" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               Asklytics
             </div>
           </div>

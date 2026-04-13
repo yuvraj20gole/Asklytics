@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { cn } from "./ui/utils";
 
 interface StatCardProps {
   title: string;
@@ -6,11 +7,27 @@ interface StatCardProps {
   icon: LucideIcon;
   trend?: string;
   trendUp?: boolean;
+  /** Use inside `AnimatedCard` to avoid double borders / backgrounds. */
+  embedded?: boolean;
 }
 
-export function StatCard({ title, value, icon: Icon, trend, trendUp }: StatCardProps) {
+export function StatCard({
+  title,
+  value,
+  icon: Icon,
+  trend,
+  trendUp,
+  embedded,
+}: StatCardProps) {
   return (
-    <div className="bg-card border border-border rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
+    <div
+      className={cn(
+        "rounded-xl p-6 transition-shadow",
+        embedded
+          ? "bg-transparent border-0 shadow-none"
+          : "bg-card border border-border shadow-sm hover:shadow-md",
+      )}
+    >
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p className="text-muted-foreground text-sm mb-1">{title}</p>

@@ -1,11 +1,34 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Navbar } from "../components/navbar";
 import { User, Mail, Lock, Save, LogOut } from "lucide-react";
 import { useTheme } from "../contexts/theme-context";
 import { setToken } from "@/lib/auth";
+import { useMotionPageEffects } from "../hooks/use-motion-page-effects";
 
 export function Settings() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const titleBlockRef = useRef<HTMLDivElement>(null);
+  const profileCardRef = useRef<HTMLDivElement>(null);
+  const passwordCardRef = useRef<HTMLDivElement>(null);
+  const preferencesCardRef = useRef<HTMLDivElement>(null);
+  const sessionCardRef = useRef<HTMLDivElement>(null);
+
+  useMotionPageEffects({
+    root: rootRef,
+    header: navRef,
+    hero: { section: mainRef, layers: [titleBlockRef] },
+    ctaBlocks: [
+      profileCardRef,
+      passwordCardRef,
+      preferencesCardRef,
+      sessionCardRef,
+    ],
+    parallaxInners: [{ section: rootRef, inner: mainRef }],
+  });
+
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   
@@ -85,11 +108,11 @@ export function Settings() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
+    <div ref={rootRef} className="min-h-screen bg-background">
+      <Navbar ref={navRef} />
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
+      <div ref={mainRef} className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div ref={titleBlockRef} className="mb-8">
           <h1 className="mb-2">Settings</h1>
           <p className="text-muted-foreground">
             Manage your account and preferences
@@ -98,7 +121,10 @@ export function Settings() {
 
         <div className="space-y-6">
           {/* Profile Settings */}
-          <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+          <div
+            ref={profileCardRef}
+            className="bg-card border border-border rounded-xl p-6 shadow-sm"
+          >
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                 <User className="w-5 h-5 text-primary" />
@@ -162,7 +188,10 @@ export function Settings() {
           </div>
 
           {/* Change Password */}
-          <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+          <div
+            ref={passwordCardRef}
+            className="bg-card border border-border rounded-xl p-6 shadow-sm"
+          >
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                 <Lock className="w-5 h-5 text-primary" />
@@ -226,7 +255,10 @@ export function Settings() {
           </div>
 
           {/* Preferences */}
-          <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+          <div
+            ref={preferencesCardRef}
+            className="bg-card border border-border rounded-xl p-6 shadow-sm"
+          >
             <h3 className="mb-6">Preferences</h3>
             
             <div className="space-y-4">
@@ -287,7 +319,10 @@ export function Settings() {
           </div>
 
           {/* Session */}
-          <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+          <div
+            ref={sessionCardRef}
+            className="bg-card border border-border rounded-xl p-6 shadow-sm"
+          >
             <h3 className="mb-2">Session</h3>
             <p className="text-sm text-muted-foreground mb-4">
               Sign out of Asklytics on this device. You will need to log in again to use the app.

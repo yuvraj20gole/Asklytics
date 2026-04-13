@@ -1,4 +1,5 @@
 import { createBrowserRouter } from "react-router";
+import { RootLayout } from "./components/root-layout";
 import { Landing } from "./pages/landing";
 import { Register } from "./pages/register";
 import { Login } from "./pages/login";
@@ -14,42 +15,20 @@ const basename =
 
 export const router = createBrowserRouter(
   [
-  {
-    path: "/",
-    Component: Landing,
-  },
-  {
-    path: "/register",
-    Component: Register,
-  },
-  {
-    path: "/login",
-    Component: Login,
-  },
-  {
-    path: "/welcome",
-    Component: Welcome,
-  },
-  {
-    path: "/dashboard",
-    Component: Dashboard,
-  },
-  {
-    path: "/chat",
-    Component: Chat,
-  },
-  {
-    path: "/history",
-    Component: History,
-  },
-  {
-    path: "/analytics",
-    Component: Analytics,
-  },
-  {
-    path: "/settings",
-    Component: Settings,
-  },
+    {
+      Component: RootLayout,
+      children: [
+        { path: "/", Component: Landing },
+        { path: "/register", Component: Register },
+        { path: "/login", Component: Login },
+        { path: "/welcome", Component: Welcome },
+        { path: "/dashboard", Component: Dashboard },
+        { path: "/chat", Component: Chat },
+        { path: "/history", Component: History },
+        { path: "/analytics", Component: Analytics },
+        { path: "/settings", Component: Settings },
+      ],
+    },
   ],
   basename ? { basename } : undefined,
 );

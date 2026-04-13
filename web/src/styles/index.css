@@ -1,3 +1,13 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* Lenis: avoid native smooth scroll fighting the instance */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}

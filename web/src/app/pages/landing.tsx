@@ -1,21 +1,82 @@
+import { useRef } from "react";
 import { Link } from "react-router";
-import { Upload, MessageSquare, TrendingUp, Lock, FileText, BarChart3 } from "lucide-react";
+import { Upload, MessageSquare, Lock, BarChart3 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { GlassPageBackdrop } from "../components/glass-page-backdrop";
+import { useLandingScrollEffects } from "../hooks/use-landing-scroll-effects";
 
 export function Landing() {
-  // Revenue Mix data matching Asklytics.jsx
   const pie = [
     { name: "Products", value: 45, color: "#1a6b4a" },
     { name: "Services", value: 28, color: "#2563eb" },
-    { name: "Other", value: 27, color: "#d97706" }
+    { name: "Other", value: 27, color: "#d97706" },
   ];
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const heroSectionRef = useRef<HTMLElement>(null);
+  const heroBadgeRef = useRef<HTMLDivElement>(null);
+  const heroHeadingRef = useRef<HTMLHeadingElement>(null);
+  const heroSubRef = useRef<HTMLParagraphElement>(null);
+  const heroCtasRef = useRef<HTMLDivElement>(null);
+  const featuresGridRef = useRef<HTMLDivElement>(null);
+  const featureCard0Ref = useRef<HTMLDivElement>(null);
+  const featureCard1Ref = useRef<HTMLDivElement>(null);
+  const featureCard2Ref = useRef<HTMLDivElement>(null);
+  const featureCard3Ref = useRef<HTMLDivElement>(null);
+  const howSectionRef = useRef<HTMLElement>(null);
+  const howInnerRef = useRef<HTMLDivElement>(null);
+  const stepCard0Ref = useRef<HTMLDivElement>(null);
+  const stepCard1Ref = useRef<HTMLDivElement>(null);
+  const stepCard2Ref = useRef<HTMLDivElement>(null);
+  const mockBlockRef = useRef<HTMLDivElement>(null);
+  const aboutSectionRef = useRef<HTMLElement>(null);
+  const statsGridRef = useRef<HTMLDivElement>(null);
+  const statCard0Ref = useRef<HTMLDivElement>(null);
+  const statCard1Ref = useRef<HTMLDivElement>(null);
+  const statCard2Ref = useRef<HTMLDivElement>(null);
+  const ctaBlockRef = useRef<HTMLDivElement>(null);
+  const howIntroRef = useRef<HTMLDivElement>(null);
+  const howMidRef = useRef<HTMLDivElement>(null);
+  const mockChromeRef = useRef<HTMLDivElement>(null);
+  const aboutHeadingRef = useRef<HTMLHeadingElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
+
+  useLandingScrollEffects({
+    root: rootRef,
+    header: headerRef,
+    heroSection: heroSectionRef,
+    heroBadge: heroBadgeRef,
+    heroHeading: heroHeadingRef,
+    heroSub: heroSubRef,
+    heroCtas: heroCtasRef,
+    featuresGrid: featuresGridRef,
+    featureCards: [featureCard0Ref, featureCard1Ref, featureCard2Ref, featureCard3Ref],
+    howSection: howSectionRef,
+    howInner: howInnerRef,
+    stepCards: [stepCard0Ref, stepCard1Ref, stepCard2Ref],
+    mockBlock: mockBlockRef,
+    aboutSection: aboutSectionRef,
+    statsGrid: statsGridRef,
+    statCards: [statCard0Ref, statCard1Ref, statCard2Ref],
+    ctaBlock: ctaBlockRef,
+    howIntro: howIntroRef,
+    howMid: howMidRef,
+    mockChrome: mockChromeRef,
+    aboutHeading: aboutHeadingRef,
+    footer: footerRef,
+  });
+
   return (
-    <div className="min-h-screen bg-[#f8f9f8] text-slate-900">
+    <div ref={rootRef} className="relative min-h-screen text-slate-900">
+      <GlassPageBackdrop tone="mint" />
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link to="/" className="text-2xl font-bold text-[#1e7a5c]" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+      <header
+        ref={headerRef}
+        className="relative overflow-hidden border-b border-white/20 bg-white/35 shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-lg supports-[backdrop-filter]:bg-white/30 dark:border-white/10 dark:bg-white/10 dark:supports-[backdrop-filter]:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-b before:from-white/50 before:to-transparent before:opacity-45 dark:before:from-white/10"
+      >
+        <div className="relative z-10 max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <Link to="/" className="text-3xl sm:text-4xl md:text-[2.5rem] font-bold text-[#1e7a5c] leading-none" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
             Asklytics
           </Link>
           
@@ -40,13 +101,13 @@ export function Landing() {
       </header>
 
       {/* Hero Section */}
-      <section className="max-w-7xl mx-auto px-6 py-20 text-center">
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#d4f4e7] rounded-full text-sm text-[#1e7a5c] mb-8">
+      <section ref={heroSectionRef} className="max-w-7xl mx-auto px-6 py-20 text-center">
+        <div ref={heroBadgeRef} className="inline-flex items-center gap-2 px-4 py-2 bg-[#d4f4e7] rounded-full text-sm text-[#1e7a5c] mb-8">
           <span className="text-lg">🤖</span>
           <span className="font-medium">AI-Powered Financial Intelligence</span>
         </div>
         
-        <h1 className="text-6xl md:text-7xl font-bold mb-6 leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
+        <h1 ref={heroHeadingRef} className="text-6xl md:text-7xl font-bold mb-6 leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
           Ask your data.
           <br />
           Get <em className="italic text-[#22c55e]">answers</em>, not
@@ -54,12 +115,12 @@ export function Landing() {
           spreadsheets.
         </h1>
         
-        <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10 leading-relaxed">
+        <p ref={heroSubRef} className="text-xl text-gray-600 max-w-2xl mx-auto mb-10 leading-relaxed">
           Upload any financial statement — CSV, Excel, or PDF — and ask questions in plain English. 
           Asklytics turns your data into instant SQL queries, tables, and visualisations.
         </p>
         
-        <div className="flex items-center justify-center gap-4 mb-20">
+        <div ref={heroCtasRef} className="flex items-center justify-center gap-4 mb-20">
           <Link 
             to="/register" 
             className="px-8 py-3 bg-[#1e7a5c] text-white rounded-lg hover:bg-[#196a4f] transition-colors shadow-lg text-lg font-medium"
@@ -75,8 +136,11 @@ export function Landing() {
         </div>
 
         {/* Feature Cards */}
-        <div id="features" className="grid md:grid-cols-4 gap-6 max-w-6xl mx-auto">
-          <div className="bg-white rounded-2xl p-6 text-left shadow-sm border border-gray-100">
+        <div ref={featuresGridRef} id="features" className="grid md:grid-cols-4 gap-6 max-w-6xl mx-auto">
+          <div
+            ref={featureCard0Ref}
+            className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-6 text-left shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/55 before:via-transparent before:to-transparent before:opacity-60 dark:before:from-white/15"
+          >
             <div className="w-12 h-12 bg-[#e0f2fe] rounded-xl flex items-center justify-center mb-4">
               <Upload className="w-6 h-6 text-[#0284c7]" />
             </div>
@@ -86,7 +150,10 @@ export function Landing() {
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 text-left shadow-sm border border-gray-100">
+          <div
+            ref={featureCard1Ref}
+            className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-6 text-left shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/55 before:via-transparent before:to-transparent before:opacity-60 dark:before:from-white/15"
+          >
             <div className="w-12 h-12 bg-[#dcfce7] rounded-xl flex items-center justify-center mb-4">
               <MessageSquare className="w-6 h-6 text-[#22c55e]" />
             </div>
@@ -96,7 +163,10 @@ export function Landing() {
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 text-left shadow-sm border border-gray-100">
+          <div
+            ref={featureCard2Ref}
+            className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-6 text-left shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/55 before:via-transparent before:to-transparent before:opacity-60 dark:before:from-white/15"
+          >
             <div className="w-12 h-12 bg-[#fef3c7] rounded-xl flex items-center justify-center mb-4">
               <BarChart3 className="w-6 h-6 text-[#f59e0b]" />
             </div>
@@ -106,7 +176,10 @@ export function Landing() {
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 text-left shadow-sm border border-gray-100">
+          <div
+            ref={featureCard3Ref}
+            className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-6 text-left shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/55 before:via-transparent before:to-transparent before:opacity-60 dark:before:from-white/15"
+          >
             <div className="w-12 h-12 bg-[#fee2e2] rounded-xl flex items-center justify-center mb-4">
               <Lock className="w-6 h-6 text-[#ef4444]" />
             </div>
@@ -119,9 +192,13 @@ export function Landing() {
       </section>
 
       {/* How It Works Section */}
-      <section id="how-it-works" className="bg-white py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
+      <section
+        ref={howSectionRef}
+        id="how-it-works"
+        className="relative overflow-hidden border-y border-white/15 bg-gradient-to-br from-slate-100/80 via-[#f0f4f3]/90 to-[#e2e8eb]/95 py-20 backdrop-blur-md dark:border-white/10 dark:from-neutral-900/40 dark:via-neutral-900/30 dark:to-neutral-950/45"
+      >
+        <div ref={howInnerRef} className="relative z-10 max-w-7xl mx-auto px-6">
+          <div ref={howIntroRef} className="text-center mb-12">
             <h2 className="text-4xl md:text-5xl font-bold mb-4" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               How Asklytics works
             </h2>
@@ -131,7 +208,10 @@ export function Landing() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-6 mb-20">
-            <div className="bg-gray-50 rounded-2xl p-8 border border-gray-200">
+            <div
+              ref={stepCard0Ref}
+              className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/30 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/45 before:to-transparent before:opacity-55 dark:before:from-white/12"
+            >
               <div className="text-sm text-gray-500 mb-3">01</div>
               <h3 className="text-2xl font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Upload your file</h3>
               <p className="text-gray-600">
@@ -139,7 +219,10 @@ export function Landing() {
               </p>
             </div>
 
-            <div className="bg-gray-50 rounded-2xl p-8 border border-gray-200">
+            <div
+              ref={stepCard1Ref}
+              className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/30 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/45 before:to-transparent before:opacity-55 dark:before:from-white/12"
+            >
               <div className="text-sm text-gray-500 mb-3">02</div>
               <h3 className="text-2xl font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Ask a question</h3>
               <p className="text-gray-600">
@@ -147,7 +230,10 @@ export function Landing() {
               </p>
             </div>
 
-            <div className="bg-gray-50 rounded-2xl p-8 border border-gray-200">
+            <div
+              ref={stepCard2Ref}
+              className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/30 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/45 before:to-transparent before:opacity-55 dark:before:from-white/12"
+            >
               <div className="text-sm text-gray-500 mb-3">03</div>
               <h3 className="text-2xl font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>Get instant insight</h3>
               <p className="text-gray-600">
@@ -156,49 +242,54 @@ export function Landing() {
             </div>
           </div>
 
-          <div className="text-center mb-12">
+          <div ref={howMidRef} className="text-center mb-12">
             <h2 className="text-4xl md:text-5xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
               Your finances, finally <span className="italic text-[#22c55e]">readable</span>
             </h2>
           </div>
 
           {/* Dashboard Mockup */}
-          <div className="max-w-5xl mx-auto">
-            <div className="bg-gradient-to-br from-gray-100 to-gray-50 rounded-3xl shadow-2xl p-8 border border-gray-200">
+          <div ref={mockBlockRef} className="max-w-5xl mx-auto">
+            <div
+              ref={mockChromeRef}
+              className="relative overflow-hidden rounded-3xl border border-white/20 bg-white/30 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-3xl before:bg-gradient-to-br before:from-white/40 before:to-transparent before:opacity-50 dark:before:from-white/10"
+            >
               {/* Browser Chrome */}
               <div className="flex items-center gap-2 mb-6">
                 <div className="w-3 h-3 rounded-full bg-[#ff5f57]"></div>
                 <div className="w-3 h-3 rounded-full bg-[#febc2e]"></div>
                 <div className="w-3 h-3 rounded-full bg-[#28c840]"></div>
-                <div className="ml-4 flex-1 bg-white rounded-lg px-4 py-2 text-sm text-gray-400 text-center">asklytics.io/dashboard</div>
+                <div className="ml-4 flex-1 rounded-lg border border-white/20 bg-white/40 px-4 py-2 text-center text-sm text-gray-400 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
+                  asklytics.io/dashboard
+                </div>
               </div>
 
               {/* Dashboard Content */}
-              <div className="bg-white rounded-2xl p-8 shadow-lg">
+              <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/40 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/35 before:to-transparent before:opacity-45 dark:before:from-white/10">
                 {/* Metric Cards */}
                 <div className="grid grid-cols-4 gap-4 mb-8">
-                  <div className="bg-[#f8f9f8] rounded-xl p-5 border border-gray-100">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
                     <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">TOTAL REVENUE</div>
                     <div className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>$6.93M</div>
                     <div className="text-sm text-[#22c55e] flex items-center gap-1 font-medium">
                       ↑ +22.4%
                     </div>
                   </div>
-                  <div className="bg-[#f8f9f8] rounded-xl p-5 border border-gray-100">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
                     <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">NET PROFIT</div>
                     <div className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>$2.44M</div>
                     <div className="text-sm text-[#22c55e] flex items-center gap-1 font-medium">
                       ↑ +31.2%
                     </div>
                   </div>
-                  <div className="bg-[#f8f9f8] rounded-xl p-5 border border-gray-100">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
                     <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">EXPENSES</div>
                     <div className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>$4.49M</div>
                     <div className="text-sm text-[#22c55e] flex items-center gap-1 font-medium">
                       ↑ +11.8%
                     </div>
                   </div>
-                  <div className="bg-[#f8f9f8] rounded-xl p-5 border border-gray-100">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
                     <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">MARGIN</div>
                     <div className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>35.2%</div>
                     <div className="text-sm text-[#22c55e] flex items-center gap-1 font-medium">
@@ -210,7 +301,7 @@ export function Landing() {
                 {/* Charts */}
                 <div className="grid grid-cols-2 gap-6">
                   {/* Line Chart */}
-                  <div className="bg-[#f8f9f8] rounded-xl p-6 border border-gray-100">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-6 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
                     <div className="text-xs font-medium text-gray-500 mb-6 tracking-wider">REVENUE VS EXPENSES</div>
                     <div className="relative h-48">
                       <svg width="100%" height="100%" viewBox="0 0 400 180" preserveAspectRatio="none">
@@ -251,7 +342,7 @@ export function Landing() {
                   </div>
 
                   {/* Donut Chart */}
-                  <div className="bg-[#f8f9f8] rounded-xl p-6 border border-gray-100">
+                  <div className="relative overflow-hidden rounded-xl border border-white/20 bg-white/35 p-6 shadow-[0_4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/10">
                     <div className="text-xs font-medium text-gray-500 mb-2 tracking-wider">REVENUE MIX</div>
                     <ResponsiveContainer width="100%" height={160}>
                       <PieChart>
@@ -279,29 +370,42 @@ export function Landing() {
       </section>
 
       {/* Social Proof Section */}
-      <section id="about" className="bg-[#f8f9f8] py-20">
+      <section
+        ref={aboutSectionRef}
+        id="about"
+        className="relative overflow-hidden bg-gradient-to-b from-transparent via-slate-100/35 to-[#e8edf0]/60 py-20 dark:via-neutral-900/25 dark:to-neutral-950/35"
+      >
         <div className="max-w-7xl mx-auto px-6">
-          <h2 className="text-4xl md:text-5xl font-bold text-center mb-12" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+          <h2 ref={aboutHeadingRef} className="text-4xl md:text-5xl font-bold text-center mb-12" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
             Trusted by financial teams
           </h2>
 
-          <div className="grid md:grid-cols-3 gap-8 mb-20">
-            <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
+          <div ref={statsGridRef} className="grid md:grid-cols-3 gap-8 mb-20">
+            <div
+              ref={statCard0Ref}
+              className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-8 text-center shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/50 before:to-transparent before:opacity-55 dark:before:from-white/12"
+            >
               <div className="text-5xl font-bold text-[#22c55e] mb-2">2.4M+</div>
               <div className="text-gray-600">Queries answered</div>
             </div>
-            <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
+            <div
+              ref={statCard1Ref}
+              className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-8 text-center shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/50 before:to-transparent before:opacity-55 dark:before:from-white/12"
+            >
               <div className="text-5xl font-bold text-[#22c55e] mb-2">98%</div>
               <div className="text-gray-600">Accuracy rate</div>
             </div>
-            <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
+            <div
+              ref={statCard2Ref}
+              className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/35 p-8 text-center shadow-[0_8px_32px_rgba(0,0,0,0.1)] backdrop-blur-lg dark:border-white/10 dark:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/50 before:to-transparent before:opacity-55 dark:before:from-white/12"
+            >
               <div className="text-5xl font-bold text-[#22c55e] mb-2">&lt;2s</div>
               <div className="text-gray-600">Average response time</div>
             </div>
           </div>
 
           {/* Final CTA */}
-          <div className="bg-gradient-to-br from-[#1e7a5c] to-[#16614a] rounded-3xl p-16 text-center shadow-2xl">
+          <div ref={ctaBlockRef} className="bg-gradient-to-br from-[#1e7a5c] to-[#16614a] rounded-3xl p-16 text-center shadow-2xl">
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-4" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               Ready to understand your finances?
             </h2>
@@ -319,9 +423,12 @@ export function Landing() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 py-8">
-        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
-          <div className="text-2xl font-bold text-[#1e7a5c]" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+      <footer
+        ref={footerRef}
+        className="relative overflow-hidden border-t border-white/20 bg-white/35 py-8 shadow-[0_-8px_32px_rgba(0,0,0,0.06)] backdrop-blur-lg supports-[backdrop-filter]:bg-white/30 dark:border-white/10 dark:bg-white/10 dark:supports-[backdrop-filter]:bg-white/10 before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-t before:from-transparent before:to-white/35 before:opacity-40 dark:before:to-white/5"
+      >
+        <div className="relative z-10 max-w-7xl mx-auto px-6 flex items-center justify-between">
+          <div className="text-3xl sm:text-4xl font-bold text-[#1e7a5c] leading-none" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
             Asklytics
           </div>
           <div className="text-sm text-gray-600">

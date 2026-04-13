@@ -1,10 +1,42 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Upload, FileText, Database, Sparkles, ArrowRight, CheckCircle2, AlertCircle } from "lucide-react";
 import { useData } from "../contexts/data-context";
 import { parseFile } from "../utils/file-parser";
+import { useMotionPageEffects } from "../hooks/use-motion-page-effects";
 
 export function Welcome() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const badgeRef = useRef<HTMLDivElement>(null);
+  const welcomeTitleRef = useRef<HTMLHeadingElement>(null);
+  const welcomeSubRef = useRef<HTMLParagraphElement>(null);
+  const stepsGridRef = useRef<HTMLDivElement>(null);
+  const stepCard0Ref = useRef<HTMLDivElement>(null);
+  const stepCard1Ref = useRef<HTMLDivElement>(null);
+  const stepCard2Ref = useRef<HTMLDivElement>(null);
+  const uploadCardRef = useRef<HTMLDivElement>(null);
+  const infoGridRef = useRef<HTMLDivElement>(null);
+  const infoCard0Ref = useRef<HTMLDivElement>(null);
+  const infoCard1Ref = useRef<HTMLDivElement>(null);
+
+  useMotionPageEffects({
+    root: rootRef,
+    header: headerRef,
+    hero: {
+      section: mainRef,
+      layers: [badgeRef, welcomeTitleRef, welcomeSubRef],
+    },
+    cardGroups: [
+      { grid: stepsGridRef, cards: [stepCard0Ref, stepCard1Ref, stepCard2Ref] },
+    ],
+    ctaBlocks: [uploadCardRef],
+    statCards: [infoCard0Ref, infoCard1Ref],
+    statsParallax: { section: rootRef, grid: infoGridRef },
+    parallaxInners: [{ section: rootRef, inner: mainRef }],
+  });
+
   const navigate = useNavigate();
   const { setData } = useData();
   const [dragActive, setDragActive] = useState(false);
@@ -64,37 +96,47 @@ export function Welcome() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background">
+    <div ref={rootRef} className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background">
       {/* Header */}
-      <header className="border-b border-border bg-background/80 backdrop-blur-sm">
+      <header ref={headerRef} className="border-b border-border bg-background/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <Link to="/" className="flex items-center gap-3">
             
-            <span className="text-3xl font-bold bg-gradient-to-r from-primary via-secondary to-primary bg-clip-text text-transparent" style={{ fontFamily: 'Poppins, sans-serif', letterSpacing: '-0.04em', fontWeight: '800' }}>
+            <span className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-primary via-secondary to-primary bg-clip-text text-transparent leading-none" style={{ fontFamily: 'Poppins, sans-serif', letterSpacing: '-0.04em', fontWeight: '800' }}>
               Asklytics
             </span>
           </Link>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 py-12">
+      <div ref={mainRef} className="max-w-5xl mx-auto px-4 py-12">
         {/* Welcome Header */}
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full mb-6">
+          <div
+            ref={badgeRef}
+            className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full mb-6"
+          >
             <CheckCircle2 className="w-5 h-5" />
             <span className="font-medium">Account Created Successfully</span>
           </div>
-          <h1 className="text-5xl font-bold mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+          <h1
+            ref={welcomeTitleRef}
+            className="text-5xl font-bold mb-4"
+            style={{ fontFamily: 'Poppins, sans-serif' }}
+          >
             Welcome to <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">Asklytics</span>
           </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+          <p ref={welcomeSubRef} className="text-xl text-muted-foreground max-w-2xl mx-auto">
             Your AI-powered business intelligence assistant that transforms natural language into actionable insights.
           </p>
         </div>
 
         {/* How It Works */}
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
+        <div ref={stepsGridRef} className="grid md:grid-cols-3 gap-6 mb-12">
+          <div
+            ref={stepCard0Ref}
+            className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow"
+          >
             <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
               <Upload className="w-6 h-6 text-primary" />
             </div>
@@ -104,7 +146,10 @@ export function Welcome() {
             </p>
           </div>
 
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
+          <div
+            ref={stepCard1Ref}
+            className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow"
+          >
             <div className="w-12 h-12 bg-secondary/10 rounded-xl flex items-center justify-center mb-4">
               <Database className="w-6 h-6 text-secondary" />
             </div>
@@ -114,7 +159,10 @@ export function Welcome() {
             </p>
           </div>
 
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
+          <div
+            ref={stepCard2Ref}
+            className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow"
+          >
             <div className="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-4">
               <Sparkles className="w-6 h-6 text-accent" />
             </div>
@@ -126,7 +174,10 @@ export function Welcome() {
         </div>
 
         {/* File Upload Section */}
-        <div className="bg-card border border-border rounded-2xl p-8 shadow-lg">
+        <div
+          ref={uploadCardRef}
+          className="bg-card border border-border rounded-2xl p-8 shadow-lg"
+        >
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold mb-2">Upload Your First Dataset</h2>
             <p className="text-muted-foreground">
@@ -215,8 +266,11 @@ export function Welcome() {
         </div>
 
         {/* Info Cards */}
-        <div className="grid md:grid-cols-2 gap-6 mt-12">
-          <div className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-2xl p-6">
+        <div ref={infoGridRef} className="grid md:grid-cols-2 gap-6 mt-12">
+          <div
+            ref={infoCard0Ref}
+            className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-2xl p-6"
+          >
             <h3 className="font-semibold mb-2 flex items-center gap-2">
               <Database className="w-5 h-5 text-primary" />
               Secure & Private
@@ -226,7 +280,10 @@ export function Welcome() {
             </p>
           </div>
 
-          <div className="bg-gradient-to-br from-secondary/10 to-secondary/5 border border-secondary/20 rounded-2xl p-6">
+          <div
+            ref={infoCard1Ref}
+            className="bg-gradient-to-br from-secondary/10 to-secondary/5 border border-secondary/20 rounded-2xl p-6"
+          >
             <h3 className="font-semibold mb-2 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-secondary" />
               AI-Powered Analysis

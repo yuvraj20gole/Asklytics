@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Navbar } from "../components/navbar";
+import { useMotionPageEffects } from "../hooks/use-motion-page-effects";
 import { Send, User, Sparkles, Copy, Check, Upload, Download, X } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useData } from "../contexts/data-context";
@@ -198,6 +199,18 @@ const LS_UPLOADED_FILE_NAME = "uploaded_file";
 const LS_UPLOADED_FILE_KIND = "asklytics_uploaded_file_kind";
 
 export function Chat() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const titleRowRef = useRef<HTMLDivElement>(null);
+
+  useMotionPageEffects({
+    root: rootRef,
+    header: navRef,
+    hero: { section: contentRef, layers: [titleRowRef] },
+    parallaxInners: [{ section: rootRef, inner: contentRef }],
+  });
+
   const { data, setData, isDataLoaded } = useData();
   const { addToHistory } = useHistory();
 
@@ -821,11 +834,17 @@ export function Chat() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <Navbar />
+    <div ref={rootRef} className="min-h-screen bg-background flex flex-col">
+      <Navbar ref={navRef} />
 
-      <div className="flex-1 max-w-5xl mx-auto w-full min-w-0 px-4 py-8">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div
+        ref={contentRef}
+        className="flex-1 max-w-5xl mx-auto w-full min-w-0 px-4 py-8"
+      >
+        <div
+          ref={titleRowRef}
+          className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+        >
           <div>
             <h1 className="mb-2">Chat Interface</h1>
             <p className="text-muted-foreground">
