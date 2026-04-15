@@ -361,6 +361,72 @@ function executeLongFactsStructuredQuery(
     };
   }
 
+  // --- Revenue trend by year (long facts) ---
+  if (
+    /\brevenue\b|\bsales\b|\bturnover\b/.test(lower) &&
+    (lower.includes("trend") ||
+      lower.includes("over") ||
+      lower.includes("each year") ||
+      lower.includes("every year") ||
+      lower.includes("by year") ||
+      lower.includes("plot") ||
+      lower.includes("chart") ||
+      lower.includes("show me"))
+  ) {
+    const series = apexOk
+      ? apex.map((p) => ({ year: p.year, value: p.revenue }))
+      : longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsOperatingRevenue);
+    if (series.length < 1) return null;
+    const sql = apexOk
+      ? `-- Operating revenue from parsed \`raw\` wide rows (first numeric column after year)`
+      : `-- Long facts: operating revenue by year\nSELECT ${yearCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%revenue%'\n  AND LOWER(CAST(${metricCol} AS TEXT)) NOT LIKE '%other%'\n  AND LOWER(CAST(${metricCol} AS TEXT)) NOT LIKE '%total_income%'\nORDER BY ${yearCol};`;
+    return {
+      sql,
+      table: series.map((s) => ({ Year: s.year, Revenue: s.value })),
+      chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
+      message: `Operating revenue by year (${series.length} period(s)).`,
+      chartType: "line",
+      insight: apexOk
+        ? "Uses the parsed wide `raw` row to avoid mixing metrics in the `value` column."
+        : "Filters `metric` to operating revenue (excludes other income / total income).",
+      metrics: ["revenue"],
+    };
+  }
+
+  // --- Expenses / cost trend by year (long facts) ---
+  if (
+    (lower.includes("expense") || lower.includes("expenses") || lower.includes("cost")) &&
+    (lower.includes("trend") ||
+      lower.includes("over") ||
+      lower.includes("each year") ||
+      lower.includes("every year") ||
+      lower.includes("by year") ||
+      lower.includes("plot") ||
+      lower.includes("chart") ||
+      lower.includes("show me"))
+  ) {
+    let series = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsTotalExpenses);
+    if (series.length < 1 && apexOk) {
+      series = apex.map((p) => ({ year: p.year, value: p.total_expenses }));
+    }
+    if (series.length < 1) return null;
+    const sql = apexOk
+      ? `-- Total expenses from parsed \`raw\` (4th numeric column in wide P&L row)`
+      : `-- Long facts: total expenses by year\nSELECT ${yearCol}, ${metricCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%expense%'\nORDER BY ${yearCol};`;
+    const rows: DataRow[] = series.map((s) => ({ Year: s.year, "Total expenses": s.value }));
+    return {
+      sql,
+      table: rows,
+      chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
+      message: `Total expenses by year (${series.length} period(s)).`,
+      chartType: "line",
+      insight: apexOk
+        ? "Uses the parsed wide `raw` row so expenses don’t accidentally sum mixed metrics."
+        : "Filters `metric` to expense rows before grouping by year.",
+      metrics: ["expenses"],
+    };
+  }
+
   // --- Operating revenue vs total expenses (wide `raw`); before expenses-only "by year" branch ---
   const asksRevenueVsExpenses =
     apexOk &&
