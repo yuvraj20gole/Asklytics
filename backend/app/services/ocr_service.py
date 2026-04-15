@@ -2,7 +2,6 @@ import logging
 import ssl
 
 import certifi
-import easyocr
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +16,31 @@ def _configure_ssl_for_https_downloads() -> None:
 
 _configure_ssl_for_https_downloads()
 
-_reader: easyocr.Reader | None = None
+_reader = None
 
 
-def _get_reader() -> easyocr.Reader:
+def _ensure_easyocr_bidi_compat() -> None:
+    """
+    EasyOCR imports `get_display` from the top-level `bidi` module.
+    Some python-bidi versions only expose it at `bidi.algorithm.get_display`.
+    Patch the module so EasyOCR can import it.
+    """
+    try:
+        import bidi as bidi_pkg  # python-bidi package
+        from bidi.algorithm import get_display
+
+        if not hasattr(bidi_pkg, "get_display"):
+            setattr(bidi_pkg, "get_display", get_display)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("[OCR] bidi compatibility patch failed: %s", exc)
+
+
+def _get_reader():
     global _reader
     if _reader is None:
+        _ensure_easyocr_bidi_compat()
+        import easyocr
+
         _reader = easyocr.Reader(["en"], gpu=False)
     return _reader
 
