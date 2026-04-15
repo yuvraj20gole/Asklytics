@@ -102,6 +102,31 @@ function findColumnKey(row: Record<string, unknown>, candidates: string[]): stri
   return null;
 }
 
+/** Backend formula SQL uses `*_pct` for margins and returns `gross_margin_pct`, not `profit_margin_pct`. */
+const KNOWN_PCT_METRIC_KEYS = [
+  "profit_margin_pct",
+  "gross_margin_pct",
+  "operating_margin_pct",
+  "ebitda_margin_pct",
+  "net_profit_margin_pct",
+  "roe_pct",
+  "roa_pct",
+  "roce_pct",
+  "yoy_revenue_growth_pct",
+  "yoy_net_income_growth_pct",
+] as const;
+
+function findPercentSeriesKey(row: Record<string, unknown>): string | null {
+  const fromList = findColumnKey(row, [...KNOWN_PCT_METRIC_KEYS]);
+  if (fromList != null && parseNumericCell(row[fromList]) != null) return fromList;
+  for (const k of Object.keys(row)) {
+    if (k.toLowerCase() === "period") continue;
+    if (!k.toLowerCase().endsWith("_pct")) continue;
+    if (parseNumericCell(row[k]) != null) return k;
+  }
+  return null;
+}
+
 /**
  * `/ask` returns flat SQL rows. Single-metric charts use `name` + `sales` (CSV/query-executor shape).
  * Compare queries return `revenue` + `expenses`; we must emit both as numbers or multi-series charts
@@ -120,8 +145,8 @@ function buildChartSpecFromServerRows(rows: Array<Record<string, unknown>>): {
   const labelKey = labelKeys.find((k) => keys.includes(k)) ?? keys[0];
   if (!labelKey) return null;
 
-  const marginPctKey = findColumnKey(row0, ["profit_margin_pct"]);
-  if (marginPctKey != null && parseNumericCell(row0[marginPctKey]) != null) {
+  const marginPctKey = findPercentSeriesKey(row0);
+  if (marginPctKey != null) {
     const chartData: Array<{ name: string; sales: number }> = [];
     for (const row of rows) {
       if (!isDataRow(row)) continue;
@@ -992,6 +1017,20 @@ export function Chat() {
                             </tbody>
                           </table>
                         </div>
+                      </div>
+                    )}
+
+                    {message.table &&
+                      message.table.length > 0 &&
+                      isDataRow(message.table[0]) &&
+                      (!message.chartData || message.chartData.length === 0) && (
+                      <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                        No chart for this answer: every plottable value is empty (often{" "}
+                        <code className="text-xs">NULL</code> in the results). For example,{" "}
+                        <strong>gross margin</strong> needs both <strong>revenue</strong> and{" "}
+                        <strong>COGS</strong> ingested into <code className="text-xs">financial_facts</code>{" "}
+                        on the server you are calling. Re-upload/ingest on production or use a persistent
+                        database so data does not reset after deploy.
                       </div>
                     )}
 
