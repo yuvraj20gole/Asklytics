@@ -28,13 +28,16 @@ def migrate_financial_facts_schema(engine: Engine) -> None:
         for ddl in ddl_statements:
             conn.execute(text(ddl))
 
+        # SQLite often stores booleans as 0/1; Postgres uses true/false.
+        is_valid_default = "TRUE" if engine.dialect.name == "postgresql" else "1"
+
         # Backward compatibility defaults for old rows.
         conn.execute(
             text(
                 "UPDATE financial_facts SET unit = COALESCE(unit, 'INR_CRORE'), "
                 "level = COALESCE(level, 'segment'), "
                 "statement_type = COALESCE(statement_type, 'income_statement'), "
-                "is_valid = COALESCE(is_valid, 1), "
+                f"is_valid = COALESCE(is_valid, {is_valid_default}), "
                 "source_page = COALESCE(source_page, 1), "
                 "extraction_method = COALESCE(extraction_method, 'rule')"
             )
