@@ -9,6 +9,15 @@
 
     <body>
       <div id="root"></div>
+      <script>
+        ;(() => {
+          // GitHub Pages SPA fallback: 404.html stores the originally requested URL here.
+          const redirect = sessionStorage.getItem('gh-pages-redirect')
+          if (!redirect) return
+          sessionStorage.removeItem('gh-pages-redirect')
+          history.replaceState(null, '', redirect)
+        })()
+      </script>
       <script type="module" src="/src/main.tsx"></script>
     </body>
   </html>

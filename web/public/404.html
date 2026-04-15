@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Asklytics</title>
+    <meta http-equiv="refresh" content="0; url=./" />
+    <script>
+      ;(() => {
+        // GitHub Pages serves /404.html for unknown paths.
+        // We preserve the full intended URL and then bounce to the app root.
+        const { pathname, search, hash } = window.location
+        const parts = pathname.split('/').filter(Boolean)
+        // Project pages: /<repo>/<route>. Custom domain: /<route>.
+        const base = parts.length > 1 ? `/${parts[0]}/` : '/'
+        sessionStorage.setItem('gh-pages-redirect', pathname + search + hash)
+        window.location.replace(base)
+      })()
+    </script>
+  </head>
+  <body></body>
+</html>
+
