@@ -371,6 +371,66 @@ function executeLongFactsStructuredQuery(
     };
   }
 
+  // --- Highest/lowest profit by year (long facts) ---
+  // Many users say "profit" but mean "net profit" for the bottom line; for image/PDF uploads we
+  // can read it from the parsed wide `raw` row (preferred) or fall back to metric filtering.
+  const asksProfitSuperlative =
+    (lower.includes("highest") ||
+      lower.includes("lowest") ||
+      lower.includes("maximum") ||
+      lower.includes("minimum") ||
+      lower.includes("best") ||
+      lower.includes("worst") ||
+      lower.includes("which year") ||
+      lower.includes("what year")) &&
+    /\bprofit\b|\bpat\b|\bnet\s+income\b|\bnet\s+profit\b/.test(lower);
+
+  if (asksProfitSuperlative) {
+    // Prefer parsed wide raw rows.
+    if (apexOk) {
+      const series = apex.map((p) => ({ year: p.year, value: p.net_profit }));
+      const hasAny = series.some((s) => Number.isFinite(s.value) && s.value !== 0);
+      if (hasAny) {
+        const wantLow =
+          lower.includes("lowest") || lower.includes("minimum") || lower.includes("worst");
+        const pick = series.reduce((a, b) =>
+          wantLow ? (b.value < a.value ? b : a) : (b.value > a.value ? b : a),
+        );
+        const sql = `-- Net profit from parsed \`raw\` (5th numeric column in wide P&L row)\n-- Avoids SUM(value) across mixed metrics.`;
+        return {
+          sql,
+          table: [{ Year: pick.year, "Net profit": pick.value }],
+          chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
+          message: `${wantLow ? "Lowest" : "Highest"} net profit is **${pick.year}** at ${cur}${pick.value.toLocaleString()}.`,
+          chartType: "line",
+          insight:
+            "Interprets “profit” as net profit for image/PDF P&L tables and reads it from the parsed `raw` row.",
+          metrics: ["net_profit"],
+        };
+      }
+    }
+
+    // Fallback: filter metric column for net profit-like labels.
+    const series = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsNetProfit);
+    if (series.length >= 1) {
+      const wantLow =
+        lower.includes("lowest") || lower.includes("minimum") || lower.includes("worst");
+      const pick = series.reduce((a, b) =>
+        wantLow ? (b.value < a.value ? b : a) : (b.value > a.value ? b : a),
+      );
+      const sql = `-- Long facts: net profit by year (filter metric in app)\nSELECT ${yearCol}, ${metricCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%net%profit%'\n   OR LOWER(CAST(${metricCol} AS TEXT)) LIKE '%net_income%'\n   OR LOWER(CAST(${metricCol} AS TEXT)) LIKE '%pat%'\nORDER BY ${yearCol};`;
+      return {
+        sql,
+        table: [{ Year: pick.year, "Net profit": pick.value }],
+        chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
+        message: `${wantLow ? "Lowest" : "Highest"} net profit is **${pick.year}** at ${cur}${pick.value.toLocaleString()}.`,
+        chartType: "line",
+        insight: "Filters metric to net profit-like labels before comparing years.",
+        metrics: ["net_profit"],
+      };
+    }
+  }
+
   // --- Revenue trend by year (long facts) ---
   if (
     /\brevenue\b|\bsales\b|\bturnover\b/.test(lower) &&
