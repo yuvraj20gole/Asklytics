@@ -323,6 +323,16 @@ function executeLongFactsStructuredQuery(
   const apex = rawCol ? apexSeriesFromLongFactRows(data, rawCol) : [];
   const apexOk = apex.length >= 2;
 
+  // Common typos for expense in chat prompts.
+  const mentionsExpensesLoose =
+    lower.includes("expense") ||
+    lower.includes("expenses") ||
+    lower.includes("cost") ||
+    lower.includes("exoense") ||
+    lower.includes("exoenses") ||
+    lower.includes("exoense") ||
+    lower.includes("exoenses");
+
   const twoYearRange = lower.match(/\bfrom\s+(20\d{2})\s+to\s+(20\d{2})\b/);
 
   const asksOtherIncomeRatio =
@@ -395,7 +405,7 @@ function executeLongFactsStructuredQuery(
 
   // --- Expenses / cost trend by year (long facts) ---
   if (
-    (lower.includes("expense") || lower.includes("expenses") || lower.includes("cost")) &&
+    mentionsExpensesLoose &&
     (lower.includes("trend") ||
       lower.includes("over") ||
       lower.includes("each year") ||
@@ -424,6 +434,40 @@ function executeLongFactsStructuredQuery(
         ? "Uses the parsed wide `raw` row so expenses don’t accidentally sum mixed metrics."
         : "Filters `metric` to expense rows before grouping by year.",
       metrics: ["expenses"],
+    };
+  }
+
+  // --- Other income trend by year (long facts) ---
+  if (
+    /other\s+income/.test(lower) &&
+    (lower.includes("trend") ||
+      lower.includes("over") ||
+      lower.includes("each year") ||
+      lower.includes("every year") ||
+      lower.includes("by year") ||
+      lower.includes("plot") ||
+      lower.includes("chart") ||
+      lower.includes("show me"))
+  ) {
+    let series = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsOtherIncome);
+    if (series.length < 1 && apexOk) {
+      series = apex.map((p) => ({ year: p.year, value: p.other_income }));
+    }
+    if (series.length < 1) return null;
+    const sql = apexOk
+      ? `-- Other income from parsed \`raw\` (2nd numeric column after year)`
+      : `-- Long facts: other income by year\nSELECT ${yearCol}, ${metricCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%other%income%'\nORDER BY ${yearCol};`;
+    const rows: DataRow[] = series.map((s) => ({ Year: s.year, "Other income": s.value }));
+    return {
+      sql,
+      table: rows,
+      chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
+      message: `Other income by year (${series.length} period(s)).`,
+      chartType: "line",
+      insight: apexOk
+        ? "Uses the parsed wide `raw` row (second numeric column after year)."
+        : "Filters `metric` to other income rows before grouping by year.",
+      metrics: ["other_income"],
     };
   }
 
