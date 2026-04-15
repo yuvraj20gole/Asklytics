@@ -383,7 +383,7 @@ function executeLongFactsStructuredQuery(
       lower.includes("worst") ||
       lower.includes("which year") ||
       lower.includes("what year")) &&
-    /\bprofit\b|\bpat\b|\bnet\s+income\b|\bnet\s+profit\b/.test(lower);
+    /\bprofits?\b|\bpat\b|\bnet\s+income\b|\bnet\s+profit\b/.test(lower);
 
   if (asksProfitSuperlative) {
     // Prefer parsed wide raw rows.
