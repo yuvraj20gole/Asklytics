@@ -1396,7 +1396,7 @@ export function Chat() {
                     : "Upload a file first, or log in to query the server…"
               }
               disabled={!canChat}
-              className="flex-1 px-4 py-3 bg-input-background text-foreground placeholder:text-muted-foreground caret-foreground border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-3 bg-input-background text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 caret-slate-900 dark:caret-slate-100 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               onClick={() => void handleSend()}
