@@ -1134,6 +1134,16 @@ export function executeCsvFinancialFormulas(
     lowerInput.includes("average") ||
     /\bavg\b/.test(lowerInput) ||
     lowerInput.includes("mean");
+  const wantsHighest =
+    lowerInput.includes("highest") ||
+    lowerInput.includes("maximum") ||
+    lowerInput.includes("best") ||
+    (lowerInput.includes("top") && !/\btop\s+\d+\b/.test(lowerInput));
+  const wantsLowest =
+    lowerInput.includes("lowest") ||
+    lowerInput.includes("minimum") ||
+    lowerInput.includes("worst") ||
+    (lowerInput.includes("bottom") && !/\bbottom\s+\d+\b/.test(lowerInput));
   const kinds = detectCsvFormulaKinds(lowerInput);
   if (!kinds?.length) return null;
 
@@ -1256,33 +1266,102 @@ export function executeCsvFinancialFormulas(
   else if (chartKind === "ebitda_absolute") chartMetric = "ebitda_amount";
   else chartMetric = KIND_COLUMNS[chartKind].find((k) => k !== "period") || "net_profit_margin_pct";
 
-  // If the prompt asks for an average and we only computed one metric, return a single-row summary.
-  if (wantsAverage && kinds.length === 1 && kinds[0] !== "all") {
-    const nums = computed
-      .map((r) => r[chartMetric])
-      .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-    if (nums.length) {
-      const avg = nums.reduce((s, x) => s + x, 0) / nums.length;
-      const rounded =
-        chartMetric.endsWith("_pct") || chartMetric.includes("margin") || chartMetric.includes("yoy_")
-          ? r2(avg)
-          : chartMetric === "eps"
-            ? r4(avg)
-            : r2(avg);
+  const chartIsPercent =
+    chartPercentKinds.includes(chartKind) || chartKind === "all";
 
-      const label = chartMetric.replace(/_/g, " ");
-      const chartIsPercent =
-        chartPercentKinds.includes(chartKind) || chartKind === "all";
+  const metricLabel = (key: string): string =>
+    key.replace(/_/g, " ").replace(/\bpct\b/i, "%");
+
+  const roundForMetric = (key: string, v: number): number => {
+    // v is always finite here, so r2/r3/r4 cannot return null.
+    if (key === "eps") return r4(v)!;
+    if (key.endsWith("_pct") || key.includes("margin") || key.startsWith("yoy_")) return r2(v)!;
+    if (key.endsWith("_ratio") || key.includes("ratio") || key.includes("turnover")) return r3(v)!;
+    return r2(v)!;
+  };
+
+  // Summary queries for formula outputs (average/highest/lowest).
+  // - If one kind: summarize that metric.
+  // - If multiple kinds: only support average (per-metric).
+  if ((wantsAverage || wantsHighest || wantsLowest) && !kinds.includes("all")) {
+    const keys =
+      kinds.length === 1
+        ? mergeKindColumns(kinds)
+        : wantsAverage
+          ? mergeKindColumns(kinds)
+          : [];
+    const valueKeys = keys.filter((k) => k !== "period");
+
+    if (kinds.length === 1 && valueKeys.length >= 1 && (wantsAverage || wantsHighest || wantsLowest)) {
+      const k = valueKeys[0]!;
+      const series = computed
+        .map((r) => ({ p: String(r.period), v: r[k] }))
+        .filter((x): x is { p: string; v: number } => typeof x.v === "number" && Number.isFinite(x.v));
+      if (series.length) {
+        if (wantsAverage) {
+          const avg = series.reduce((s, x) => s + x.v, 0) / series.length;
+          const rounded = roundForMetric(k, avg);
+          const label = metricLabel(k);
+          return {
+            sql,
+            table: [{ period: "Average", [label]: rounded }],
+            chartData: [{ name: "Average", sales: rounded }],
+            message: `Average ${label} across ${series.length} period(s).`,
+            chartType: "bar",
+            chartValueFormat: chartIsPercent ? "percent" : undefined,
+            insight: `Computed the mean of ${series.length} values from your CSV (${layoutDescription}).`,
+            metrics: [k],
+          };
+        }
+
+        const pick = series.reduce((a, b) =>
+          wantsLowest ? (b.v < a.v ? b : a) : (b.v > a.v ? b : a),
+        );
+        const label = metricLabel(k);
+        const rounded = roundForMetric(k, pick.v);
+        return {
+          sql,
+          table: [{ period: pick.p, [label]: rounded }],
+          chartData: [{ name: pick.p, sales: rounded }],
+          message: `${wantsLowest ? "Lowest" : "Highest"} ${label} is **${rounded}** in **${pick.p}**.`,
+          chartType: "bar",
+          chartValueFormat: chartIsPercent ? "percent" : undefined,
+          insight: `Picked ${wantsLowest ? "minimum" : "maximum"} across ${series.length} period(s).`,
+          metrics: [k],
+        };
+      }
+    }
+
+    if (wantsAverage && valueKeys.length >= 1) {
+      const avgRow: DataRow = { period: "Average" };
+      for (const k of valueKeys) {
+        const nums = computed
+          .map((r) => r[k])
+          .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+        if (!nums.length) {
+          avgRow[metricLabel(k)] = "—";
+          continue;
+        }
+        const avg = nums.reduce((s, x) => s + x, 0) / nums.length;
+        avgRow[metricLabel(k)] = roundForMetric(k, avg);
+      }
+
+      const chartPoint: { name: string; [key: string]: unknown } = { name: "Average" };
+      for (const k of valueKeys) {
+        const label = metricLabel(k);
+        const v = avgRow[label];
+        if (typeof v === "number") chartPoint[label] = v;
+      }
 
       return {
         sql,
-        table: [{ period: "Average", [label]: rounded ?? "—" }],
-        chartData: [{ name: "Average", sales: rounded }],
-        message: `Average ${label} across ${nums.length} period(s).`,
-        chartType: "bar",
+        table: [avgRow],
+        chartData: [chartPoint],
+        message: `Average values across ${computed.length} period(s).`,
+        chartType: valueKeys.length > 1 ? "multi-bar" : "bar",
         chartValueFormat: chartIsPercent ? "percent" : undefined,
-        insight: `Computed the mean of ${nums.length} values from your CSV (${layoutDescription}).`,
-        metrics: [chartMetric],
+        insight: `Computed per-metric means from your CSV (${layoutDescription}).`,
+        metrics: valueKeys,
       };
     }
   }
@@ -1308,9 +1387,6 @@ export function executeCsvFinancialFormulas(
         : `Results for “${kindLabel}” (${layoutDescription}).`;
 
   const insight = buildFormulaInsights(kinds, table, computed, pivot, layoutDescription);
-
-  const chartIsPercent =
-    chartPercentKinds.includes(chartKind) || chartKind === "all";
 
   return {
     sql,
