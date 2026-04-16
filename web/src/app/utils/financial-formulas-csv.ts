@@ -286,7 +286,7 @@ function pivotFromWideSheet(
   for (const row of rows) {
     const period = String(row[yearCol] ?? "").trim();
     if (!period) continue;
-    let agg: PivotMetrics = { ...(map.get(period) || {}) };
+    const agg: PivotMetrics = { ...(map.get(period) || {}) };
     for (const col of columns) {
       if (col === yearCol) continue;
       const keyMetric = classifyMetric(col);
@@ -1130,6 +1130,10 @@ export function executeCsvFinancialFormulas(
   columns: string[],
 ): QueryResult | null {
   const lowerInput = userInput.toLowerCase();
+  const wantsAverage =
+    lowerInput.includes("average") ||
+    /\bavg\b/.test(lowerInput) ||
+    lowerInput.includes("mean");
   const kinds = detectCsvFormulaKinds(lowerInput);
   if (!kinds?.length) return null;
 
@@ -1251,6 +1255,37 @@ export function executeCsvFinancialFormulas(
   else if (chartKind === "yoy") chartMetric = "yoy_revenue_growth_pct";
   else if (chartKind === "ebitda_absolute") chartMetric = "ebitda_amount";
   else chartMetric = KIND_COLUMNS[chartKind].find((k) => k !== "period") || "net_profit_margin_pct";
+
+  // If the prompt asks for an average and we only computed one metric, return a single-row summary.
+  if (wantsAverage && kinds.length === 1 && kinds[0] !== "all") {
+    const nums = computed
+      .map((r) => r[chartMetric])
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+    if (nums.length) {
+      const avg = nums.reduce((s, x) => s + x, 0) / nums.length;
+      const rounded =
+        chartMetric.endsWith("_pct") || chartMetric.includes("margin") || chartMetric.includes("yoy_")
+          ? r2(avg)
+          : chartMetric === "eps"
+            ? r4(avg)
+            : r2(avg);
+
+      const label = chartMetric.replace(/_/g, " ");
+      const chartIsPercent =
+        chartPercentKinds.includes(chartKind) || chartKind === "all";
+
+      return {
+        sql,
+        table: [{ period: "Average", [label]: rounded ?? "—" }],
+        chartData: [{ name: "Average", sales: rounded }],
+        message: `Average ${label} across ${nums.length} period(s).`,
+        chartType: "bar",
+        chartValueFormat: chartIsPercent ? "percent" : undefined,
+        insight: `Computed the mean of ${nums.length} values from your CSV (${layoutDescription}).`,
+        metrics: [chartMetric],
+      };
+    }
+  }
 
   const chartData = computed.map((row) => {
     const y = row[chartMetric];
