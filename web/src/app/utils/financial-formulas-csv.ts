@@ -578,6 +578,65 @@ function computeRow(
 }
 
 /**
+ * Abbreviations & colloquial synonyms. Runs after explicit phrases, **before** the generic
+ * `includes("margin")` rule so e.g. "GP margin" does not become net margin.
+ */
+function matchSynonymAndAbbreviationIntents(lower: string): FormulaKind[] | null {
+  const finCtx =
+    /\b(financial|accounting|ratio|ratios|statement|balance\s+sheet|balance|sheet|p&l|pnl|pl\b|metric|metrics|kpi|company|fiscal|fy|earnings|revenue|profit|ebitda|covenant)\b/i.test(
+      lower,
+    );
+
+  // TIE / times interest earned — require finance words so "tie" in normal English does not fire.
+  if (
+    /\btie\s+ratio\b/i.test(lower) ||
+    /\btimes\s+interest\s+earned\b/i.test(lower) ||
+    (/\btie\b/i.test(lower) && /\b(interest|ebitda|ebit|coverage|coupon|borrow|debt|loan|bond)\b/i.test(lower))
+  ) {
+    return ["interest_coverage"];
+  }
+
+  // NPM as net profit margin (never match bare "npm" without finance + margin context).
+  if (
+    /\bnpm\b/i.test(lower) &&
+    finCtx &&
+    /\b(margin|profit|net|pct|percent|ratio)\b/i.test(lower)
+  ) {
+    return ["net_margin"];
+  }
+
+  // GP margin / gross profit margin (without the word "gross" in the question).
+  if (/\b(g\.?\s*p\.?|gp)\s+margin\b/i.test(lower) || /\bgross\s+profit\s+margin\b/i.test(lower)) {
+    return ["gross_margin"];
+  }
+
+  // Working capital / liquidity phrasing → current ratio (exclude obvious market-liquidity usage).
+  if (
+    /\bworking\s+capital\s+ratio\b/i.test(lower) ||
+    (/\bwc\s+ratio\b/i.test(lower) && /\b(working|capital|liquidity|current)\b/i.test(lower)) ||
+    (/\bliquidity\s+ratio\b/i.test(lower) &&
+      !/\b(market|stock|crypto|token|fx|forex|volume|trading)\b/i.test(lower) &&
+      (finCtx || /\b(current|asset|balance|sheet|covenant)\b/i.test(lower)))
+  ) {
+    return ["current_ratio"];
+  }
+
+  if (/\bliquidity\s+test\b/i.test(lower) && /\b(quick|acid|ratio)\b/i.test(lower)) {
+    return ["quick_ratio"];
+  }
+
+  // "Leverage ratio" with balance-sheet debt context (not generic "financial leverage" blog titles).
+  if (
+    /\bleverage\s+ratio\b/i.test(lower) &&
+    /\b(debt|borrow|loan|gearing|equity|covenant|balance\s+sheet)\b/i.test(lower)
+  ) {
+    return ["debt_to_equity"];
+  }
+
+  return null;
+}
+
+/**
  * Detect one or more formula kinds. Multiple kinds merge columns (e.g. gross profit + gross margin).
  */
 export function detectCsvFormulaKinds(lowerInput: string): FormulaKind[] | null {
@@ -625,55 +684,151 @@ export function detectCsvFormulaKinds(lowerInput: string): FormulaKind[] | null 
 
   if (asksGrossProfit && !lowerInput.includes("margin")) return ["gross_profit"];
   if (asksGrossMargin) return ["gross_margin"];
-  if (lowerInput.includes("operating margin")) return ["operating_margin"];
+  if (
+    lowerInput.includes("operating margin") ||
+    /\boperating\s+profit\s+margin\b/i.test(lowerInput) ||
+    /\bop\s+margin\b/i.test(lowerInput)
+  ) {
+    return ["operating_margin"];
+  }
   if (asksEbitdaMargin) return ["ebitda_margin"];
   if (/\bebitda\b|\bebita\b/.test(lowerInput)) return ["ebitda_absolute"];
 
+  const asksFlowSumOrTotal = csvQuestionAsksFlowSumOrTotal(lowerInput);
+  if (asksFlowSumOrTotal && asksGrossProfit) return ["gross_profit"];
+  if (
+    asksFlowSumOrTotal &&
+    /\b(revenue|sales|turnover|top\s*line)\b/i.test(lowerInput) &&
+    !/\b(yoy|year[-\s]over[-\s]year|growth\s+rate)\b/i.test(lowerInput)
+  ) {
+    return ["yoy"];
+  }
+  if (
+    asksFlowSumOrTotal &&
+    /\b(net\s+income|net\s+profit|bottom\s+line|\bp\.?a\.?t\.?\b)\b/i.test(lowerInput) &&
+    !/\b(revenue|sales|turnover|top\s*line)\b/i.test(lowerInput)
+  ) {
+    return ["yoy"];
+  }
+
   if (
     lowerInput.includes("yoy") ||
+    /\by\s*o\s*y\b/i.test(lowerInput) ||
     lowerInput.includes("year over year") ||
     lowerInput.includes("year-over-year") ||
+    lowerInput.includes("year on year") ||
     (lowerInput.includes("growth") && /revenue|income|profit|sales/.test(lowerInput))
   ) {
     return ["yoy"];
   }
 
-  if (/\broe\b/.test(lowerInput) || lowerInput.includes("return on equity")) return ["roe"];
-  if (/\broa\b/.test(lowerInput) || lowerInput.includes("return on asset")) return ["roa"];
-  if (/\broce\b/.test(lowerInput) || lowerInput.includes("return on capital")) return ["roce"];
-
-  if (lowerInput.includes("current ratio")) return ["current_ratio"];
-  if (lowerInput.includes("quick ratio") || lowerInput.includes("acid test")) return ["quick_ratio"];
   if (
-    lowerInput.includes("debt to equity") ||
-    lowerInput.includes("debt/equity") ||
-    lowerInput.includes("debt-equity")
+    /\broe\b/i.test(lowerInput) ||
+    /\breturn\s+on\s+equity\b/i.test(lowerInput) ||
+    /\breturn\s+on\s+shareholders(?:'|’)?s?\s+equity\b/i.test(lowerInput)
   ) {
+    return ["roe"];
+  }
+  if (/\broa\b/i.test(lowerInput) || /\breturn\s+on\s+assets?\b/i.test(lowerInput)) {
+    return ["roa"];
+  }
+  if (
+    /\broce\b/i.test(lowerInput) ||
+    /\breturn\s+on\s+capital\s+employed\b/i.test(lowerInput) ||
+    /\breturn\s+on\s+capital\b/i.test(lowerInput)
+  ) {
+    return ["roce"];
+  }
+
+  if (/\bcurrent\s+ratio\b/i.test(lowerInput) || /\bcurrent\s+liquidity\b/i.test(lowerInput)) {
+    return ["current_ratio"];
+  }
+  if (
+    /\bquick\s+ratio\b/i.test(lowerInput) ||
+    /\bacid\s+test\b/i.test(lowerInput) ||
+    /\bacid[-\s]?test\s+ratio\b/i.test(lowerInput)
+  ) {
+    return ["quick_ratio"];
+  }
+  // Debt/equity: users often omit "to" ("debt equity ratio", "D/E").
+  const asksDebtToEquity =
+    /\bdebt\s+to\s+equity\b/i.test(lowerInput) ||
+    /\bdebt\s*\/\s*equity\b/i.test(lowerInput) ||
+    /\bdebt[-\s]+equity(?:\s+ratio)?\b/i.test(lowerInput) ||
+    /\bdebt\s+equity(?:\s+ratio)?\b/i.test(lowerInput) ||
+    /\bd\s*\/\s*e(?:\s+ratio)?\b/i.test(lowerInput) ||
+    (/\bgearing\b/.test(lowerInput) &&
+      /\b(debt|borrow|leverage|equity)\b/i.test(lowerInput));
+  if (asksDebtToEquity) {
     return ["debt_to_equity"];
   }
-  if (lowerInput.includes("interest coverage")) return ["interest_coverage"];
-  if (lowerInput.includes("asset turnover")) return ["asset_turnover"];
-  if (lowerInput.includes("inventory days")) return ["inventory_days"];
+  if (
+    /\binterest\s+cover(?:age)?\b/i.test(lowerInput) ||
+    /\btimes\s+interest\s+earned\b/i.test(lowerInput)
+  ) {
+    return ["interest_coverage"];
+  }
+  if (
+    /\basset\s+turnover\b/i.test(lowerInput) ||
+    /\basset\s+turns?\b/i.test(lowerInput) ||
+    /\bsales\s+to\s+total\s+assets\b/i.test(lowerInput)
+  ) {
+    return ["asset_turnover"];
+  }
+  if (
+    /\binventory\s+days\b/i.test(lowerInput) ||
+    /\bdays['\s]?inventory\b/i.test(lowerInput) ||
+    /\bdio\b/i.test(lowerInput)
+  ) {
+    return ["inventory_days"];
+  }
   if (
     lowerInput.includes("receivable days") ||
     lowerInput.includes("days sales outstanding") ||
-    /\bdso\b/.test(lowerInput)
+    /\bdso\b/.test(lowerInput) ||
+    /\baccounts?\s+receivable\s+days\b/i.test(lowerInput) ||
+    /\bar\s+days\b/i.test(lowerInput) ||
+    (/\bcollection\s+period\b/i.test(lowerInput) &&
+      /receivable|\bar\b|dso|sales/i.test(lowerInput))
   ) {
     return ["receivable_days"];
   }
-  if (lowerInput.includes("payable days") || lowerInput.includes("days payable")) return ["payable_days"];
-
-  if (lowerInput.includes("earnings per share") || /\beps\b/.test(lowerInput)) return ["eps"];
   if (
+    lowerInput.includes("payable days") ||
+    lowerInput.includes("days payable") ||
+    /\bdpo\b/i.test(lowerInput) ||
+    /\baccounts?\s+payable\s+days\b/i.test(lowerInput) ||
+    (/\bpayment\s+period\b/i.test(lowerInput) && /payable|supplier|dpo/i.test(lowerInput))
+  ) {
+    return ["payable_days"];
+  }
+
+  if (/\bearnings?\s+per\s+share\b/i.test(lowerInput) || /\beps\b/i.test(lowerInput)) {
+    return ["eps"];
+  }
+  if (
+    /\bp\s*\/\s*e\b/i.test(lowerInput) ||
+    /\bp[\s-]*e\s+ratio\b/i.test(lowerInput) ||
     lowerInput.includes("p/e") ||
     lowerInput.includes("pe ratio") ||
     lowerInput.includes("price to earnings") ||
-    lowerInput.includes("price/earnings")
+    lowerInput.includes("price/earnings") ||
+    /\bprice\s+earnings\s+ratio\b/i.test(lowerInput)
   ) {
     return ["pe"];
   }
 
-  if (lowerInput.includes("margin") || lowerInput.includes("profit margin")) return ["net_margin"];
+  const fromSynonyms = matchSynonymAndAbbreviationIntents(lowerInput);
+  if (fromSynonyms) return fromSynonyms;
+
+  if (
+    /\bnet\s+margin\b/i.test(lowerInput) ||
+    /\bnet\s+profit\s+margin\b/i.test(lowerInput) ||
+    lowerInput.includes("margin") ||
+    lowerInput.includes("profit margin")
+  ) {
+    return ["net_margin"];
+  }
 
   return null;
 }
@@ -1124,6 +1279,113 @@ function buildFormulaInsights(
   return sentences.join(" ") || `Computed from your CSV (${layoutDescription}).`;
 }
 
+/** Whether a computed column is naturally expressed as a % in charts (not e.g. debt/equity multiples). */
+function metricValueDisplayAsPercent(metricKey: string): boolean {
+  return (
+    metricKey.endsWith("_pct") ||
+    metricKey.includes("margin") ||
+    metricKey.startsWith("yoy_")
+  );
+}
+
+function formatMetricLabel(key: string): string {
+  return key.replace(/_/g, " ").replace(/\bpct\b/i, "%");
+}
+
+/** Sum / total across periods is meaningful for currency / flow amounts, not for ratios or growth rates. */
+function metricIsSummable(metricKey: string): boolean {
+  return (
+    metricKey === "revenue" ||
+    metricKey === "net_income" ||
+    metricKey === "ebitda_amount" ||
+    metricKey === "gross_profit"
+  );
+}
+
+/** User wants a pooled sum or total of line items (used by formula detect + executor). */
+export function csvQuestionAsksFlowSumOrTotal(lowerInput: string): boolean {
+  return (
+    /\b(sum|summed|totaled|combined|aggregate)\b/i.test(lowerInput) ||
+    /\badd\s+up\b/i.test(lowerInput) ||
+    /\btotal\s+of\b/i.test(lowerInput) ||
+    (/\btotal\b/i.test(lowerInput) &&
+      /\b(revenue|sales|turnover|net\s+income|net\s+profit|profits?|ebitda|gross\s+profit)\b/i.test(
+        lowerInput,
+      ))
+  );
+}
+
+function summableKeysForSumQuery(
+  lowerInput: string,
+  kinds: FormulaKind[],
+  valueKeys: string[],
+): string[] {
+  const summable = valueKeys.filter(metricIsSummable);
+  if (!summable.length) return [];
+  if (kinds.length === 1 && kinds[0] === "yoy") {
+    const wantsRev = /\b(revenue|sales|turnover|top\s*line)\b/i.test(lowerInput);
+    const wantsNi = /\b(net\s+income|net\s+profit|bottom\s+line|\bp\.?a\.?t\.?\b)\b/i.test(lowerInput);
+    if (wantsRev && !wantsNi) return summable.filter((k) => k === "revenue");
+    if (wantsNi && !wantsRev) return summable.filter((k) => k === "net_income");
+  }
+  return summable;
+}
+
+/** Inclusive calendar/FY range from natural language (e.g. 2020–2023, between … and …). */
+export function extractYearRangeFromQuestion(input: string): { lo: number; hi: number } | null {
+  let m = input.match(/\b(\d{4})\s*[-–—]\s*(\d{4})\b/);
+  if (m) {
+    const a = parseInt(m[1]!, 10);
+    const b = parseInt(m[2]!, 10);
+    return { lo: Math.min(a, b), hi: Math.max(a, b) };
+  }
+  m = input.match(/\bbetween\s+(\d{4})\s+and\s+(\d{4})\b/i);
+  if (m) {
+    const a = parseInt(m[1]!, 10);
+    const b = parseInt(m[2]!, 10);
+    return { lo: Math.min(a, b), hi: Math.max(a, b) };
+  }
+  m = input.match(/\bfrom\s+(\d{4})\s+(?:to|through|until)\s+(\d{4})\b/i);
+  if (m) {
+    const a = parseInt(m[1]!, 10);
+    const b = parseInt(m[2]!, 10);
+    return { lo: Math.min(a, b), hi: Math.max(a, b) };
+  }
+  return null;
+}
+
+export function periodOverlapsYearRange(periodLabel: string, lo: number, hi: number): boolean {
+  const ys = [...String(periodLabel).matchAll(/\b(19|20)\d{2}\b/g)].map((x) => parseInt(x[0]!, 10));
+  if (ys.length) return ys.some((y) => y >= lo && y <= hi);
+  const k = fiscalYearSortKey(periodLabel);
+  if (Number.isFinite(k)) return k >= lo && k <= hi;
+  return false;
+}
+
+function yearSpanFromFiscalKeys(periodLabels: string[]): number | null {
+  const keys = periodLabels.map((p) => fiscalYearSortKey(p)).filter((n) => Number.isFinite(n));
+  if (keys.length < 2) return null;
+  const lo = Math.min(...keys);
+  const hi = Math.max(...keys);
+  const d = hi - lo;
+  return d > 0 ? d : null;
+}
+
+export function csvQuestionAsksCagr(lowerInput: string): boolean {
+  return (
+    /\bcagr\b/i.test(lowerInput) ||
+    /\bcompound\s+annual(?:ized)?\s+growth\b/i.test(lowerInput) ||
+    /\bannualized\s+growth\s+rate\b/i.test(lowerInput)
+  );
+}
+
+export function csvQuestionAsksRunningTotal(lowerInput: string): boolean {
+  return (
+    /\b(running\s+total|cumulative(?:\s+total)?|cum\s+total)\b/i.test(lowerInput) ||
+    /\broll(?:ing)?\s+sum\b/i.test(lowerInput)
+  );
+}
+
 export function executeCsvFinancialFormulas(
   userInput: string,
   data: DataRow[],
@@ -1133,17 +1395,31 @@ export function executeCsvFinancialFormulas(
   const wantsAverage =
     lowerInput.includes("average") ||
     /\bavg\b/.test(lowerInput) ||
-    lowerInput.includes("mean");
+    lowerInput.includes("mean") ||
+    /\boverall\s+average\b/i.test(lowerInput) ||
+    /\brolling\s+average\b/i.test(lowerInput) ||
+    /\bacross\s+all\s+(years?|fiscal\s*years?|periods?)\b/i.test(lowerInput) ||
+    /\b(average|mean)\s+(across|over)\s+(all\s+)?(years?|periods?|fys?)\b/i.test(lowerInput);
+  const wantsMedian = /\bmedian\b/i.test(lowerInput);
+  const wantsPercentTone =
+    /\b(percent|percentage|pct\.?)\b/i.test(lowerInput) ||
+    /\bas\s+a\s+percent/i.test(lowerInput) ||
+    /%/.test(userInput);
   const wantsHighest =
     lowerInput.includes("highest") ||
     lowerInput.includes("maximum") ||
     lowerInput.includes("best") ||
+    /\b(max|peak|record\s+high)\b/i.test(lowerInput) ||
     (lowerInput.includes("top") && !/\btop\s+\d+\b/.test(lowerInput));
   const wantsLowest =
     lowerInput.includes("lowest") ||
     lowerInput.includes("minimum") ||
     lowerInput.includes("worst") ||
+    /\b(min|trough|record\s+low)\b/i.test(lowerInput) ||
     (lowerInput.includes("bottom") && !/\bbottom\s+\d+\b/.test(lowerInput));
+  const wantsSum = csvQuestionAsksFlowSumOrTotal(lowerInput);
+  const wantsCagr = csvQuestionAsksCagr(lowerInput);
+  const wantsRunningTotal = csvQuestionAsksRunningTotal(lowerInput);
   const kinds = detectCsvFormulaKinds(lowerInput);
   if (!kinds?.length) return null;
 
@@ -1214,19 +1490,78 @@ export function executeCsvFinancialFormulas(
     longCols,
   );
 
+  const yearRange = extractYearRangeFromQuestion(userInput);
+  const analysisRows =
+    yearRange == null
+      ? computed
+      : computed.filter((r) => periodOverlapsYearRange(String(r.period), yearRange.lo, yearRange.hi));
+
+  if (yearRange != null && analysisRows.length === 0) {
+    return {
+      sql,
+      table: [
+        {
+          Range: `${yearRange.lo}–${yearRange.hi}`,
+          Status: "No matching periods",
+        },
+      ],
+      chartData: [],
+      message: `No periods fall between **${yearRange.lo}** and **${yearRange.hi}** in this dataset.`,
+      chartType: "bar",
+      insight: "Check period labels (e.g. FY2021 vs 2021) or widen the range.",
+    };
+  }
+
+  const rangeHint = yearRange == null ? "" : ` Filtered to ${yearRange.lo}–${yearRange.hi}.`;
+
+  if (wantsSum && !wantsRunningTotal && kinds.length === 1) {
+    const vk = mergeKindColumns(kinds).filter((k) => k !== "period");
+    if (vk.length === 1 && !metricIsSummable(vk[0]!)) {
+      const bad = vk[0]!;
+      return {
+        sql,
+        table: [
+          {
+            Metric: formatMetricLabel(bad),
+            Issue: "Sum/total not applicable",
+          },
+        ],
+        chartData: [],
+        message: `Summing **${formatMetricLabel(bad)}** across years is not meaningful—it is a ratio or margin, not a currency flow.`,
+        chartType: "bar",
+        insight:
+          "Use **average**, **median**, **high/low**, or a **single year** for this metric. Use **total revenue**, **net income**, **EBITDA**, or **gross profit** when you need pooled amounts.",
+      };
+    }
+  }
+
   // If the user asked for a specific year/period, return just that period's values.
   const extractRequestedPeriod = (): string | null => {
-    // Prefer explicit "FY 2021" / "FY2021"
-    const fy = userInput.match(/\bFY\s*(\d{4})\b/i);
-    const year = fy?.[1] ?? userInput.match(/\b(19|20)\d{2}\b/)?.[0] ?? null;
+    let year: string | null = null;
+    const fy4 = userInput.match(/\bFY\s*((?:19|20)\d{2})\b/i);
+    if (fy4) year = fy4[1];
+    if (!year) {
+      const fy2 = userInput.match(/\bFY\s*'?(\d{2})\b/i);
+      if (fy2) {
+        const n = parseInt(fy2[1], 10);
+        year = String(n < 70 ? 2000 + n : 1900 + n);
+      }
+    }
+    if (!year) {
+      const forYear = userInput.match(
+        /\b(?:for|in|during)\s+(?:the\s+)?(?:calendar\s+|fiscal\s+)?(?:year\s+)?((?:19|20)\d{2})\b/i,
+      );
+      if (forYear) year = forYear[1];
+    }
+    if (!year) {
+      const bare = userInput.match(/\b(19|20)\d{2}\b/);
+      year = bare?.[0] ?? null;
+    }
     if (!year) return null;
-
-    // Find a period label in the dataset that contains that year.
-    // Works for "FY 2021", "2021", "FY2021", etc.
     const hit = periods.find((p) => String(p).includes(year));
     return hit ?? null;
   };
-  const requestedPeriod = extractRequestedPeriod();
+  const requestedPeriod = yearRange == null ? extractRequestedPeriod() : null;
 
   const filterKeys = (row: ComputedRow, keys: string[]): DataRow => {
     const out: DataRow = {};
@@ -1240,7 +1575,7 @@ export function executeCsvFinancialFormulas(
 
   let table: DataRow[];
   if (kinds.includes("all") && kinds.length === 1) {
-    table = computed.map((row) => {
+    table = analysisRows.map((row) => {
       const o: DataRow = {};
       for (const [k, v] of Object.entries(row)) {
         o[k] = v === null || v === undefined ? "—" : v;
@@ -1249,7 +1584,7 @@ export function executeCsvFinancialFormulas(
     });
   } else {
     const keys = mergeKindColumns(kinds);
-    table = computed.map((row) => filterKeys(row, keys));
+    table = analysisRows.map((row) => filterKeys(row, keys));
   }
 
   const chartPercentKinds: FormulaKind[] = [
@@ -1283,8 +1618,25 @@ export function executeCsvFinancialFormulas(
   const chartIsPercent =
     chartPercentKinds.includes(chartKind) || chartKind === "all";
 
-  const metricLabel = (key: string): string =>
-    key.replace(/_/g, " ").replace(/\bpct\b/i, "%");
+  /** Chart axis: % for margin/YoY series; currency for revenue/NI/EBITDA-style flows. */
+  const chartFmt: "percent" | "currency" | undefined =
+    (chartIsPercent && metricValueDisplayAsPercent(chartMetric)) ||
+    (wantsPercentTone && metricValueDisplayAsPercent(chartMetric))
+      ? "percent"
+      : metricIsSummable(chartMetric)
+        ? "currency"
+        : undefined;
+  const summaryChartFmt = (valueKey: string): "percent" | "currency" | undefined => {
+    if (
+      (chartIsPercent && metricValueDisplayAsPercent(valueKey)) ||
+      (wantsPercentTone && metricValueDisplayAsPercent(valueKey))
+    )
+      return "percent";
+    if (metricIsSummable(valueKey)) return "currency";
+    return undefined;
+  };
+
+  const metricLabel = (key: string): string => formatMetricLabel(key);
 
   const roundForMetric = (key: string, v: number): number => {
     // v is always finite here, so r2/r3/r4 cannot return null.
@@ -1294,21 +1646,136 @@ export function executeCsvFinancialFormulas(
     return r2(v)!;
   };
 
-  // Summary queries for formula outputs (average/highest/lowest).
+  if (wantsRunningTotal && !kinds.includes("all")) {
+    const rKeys = mergeKindColumns(kinds);
+    const rValueKeys = rKeys.filter((k) => k !== "period");
+    const rk =
+      summableKeysForSumQuery(lowerInput, kinds, rValueKeys)[0] ??
+      rValueKeys.find((k) => metricIsSummable(k));
+    if (!rk || !metricIsSummable(rk)) {
+      return {
+        sql,
+        table: [
+          {
+            Issue: "Running total not applicable",
+            Detail: "Cumulative totals apply to revenue, net income, EBITDA, or gross profit.",
+          },
+        ],
+        chartData: [],
+        message:
+          "A **running total** only applies to additive flow amounts (revenue, net income, EBITDA, gross profit)—not ratios or margins.",
+        chartType: "bar",
+        insight: "Rephrase using one of those line items, or ask for a **sum** / **average** of the metric you care about.",
+      };
+    }
+    let acc = 0;
+    const cumTable: DataRow[] = [];
+    const cumChart: { name: string; sales: number }[] = [];
+    const rl = metricLabel(rk);
+    for (const r of analysisRows) {
+      const v = r[rk];
+      if (typeof v === "number" && Number.isFinite(v)) acc += v;
+      cumTable.push({ period: String(r.period), [rl]: roundForMetric(rk, acc) });
+      cumChart.push({ name: String(r.period), sales: acc });
+    }
+    return {
+      sql,
+      table: cumTable,
+      chartData: cumChart,
+      message: `Cumulative **${rl}** by period (running total).${rangeHint}`,
+      chartType: "line",
+      chartValueFormat: "currency",
+      insight: `Each point adds that period’s ${rl} to the prior cumulative total.${rangeHint}`,
+      metrics: [rk],
+    };
+  }
+
+  if (wantsCagr && !kinds.includes("all")) {
+    const cKeys = mergeKindColumns(kinds);
+    const cValueKeys = cKeys.filter((k) => k !== "period");
+    let cagrKeys = summableKeysForSumQuery(lowerInput, kinds, cValueKeys);
+    if (!cagrKeys.length) cagrKeys = cValueKeys.filter(metricIsSummable);
+    if (cagrKeys.length === 1) {
+      const ck = cagrKeys[0]!;
+      const posRows = analysisRows.filter(
+        (r) =>
+          typeof r[ck] === "number" &&
+          Number.isFinite(r[ck] as number) &&
+          (r[ck] as number) > 0,
+      );
+      if (posRows.length >= 2) {
+        const start = posRows[0]![ck] as number;
+        const end = posRows[posRows.length - 1]![ck] as number;
+        const span = yearSpanFromFiscalKeys(posRows.map((r) => String(r.period)));
+        if (span != null && span > 0 && start > 0) {
+          const cagrPct = (Math.pow(end / start, 1 / span) - 1) * 100;
+          const rounded = r2(cagrPct);
+          if (rounded != null) {
+            const cl = metricLabel(ck);
+            return {
+              sql,
+              table: [
+                {
+                  Metric: `CAGR ${cl}`,
+                  "CAGR %": rounded,
+                  Years: span,
+                  From: String(posRows[0]!.period),
+                  To: String(posRows[posRows.length - 1]!.period),
+                },
+              ],
+              chartData: [{ name: "CAGR", sales: rounded }],
+              message: `Compound annual growth (**${cl}**): **${rounded}%** over **${span}** year(s).${rangeHint}`,
+              chartType: "bar",
+              chartValueFormat: "percent",
+              insight: `CAGR uses first and last **positive** ${cl} in the selected periods (span from FY labels).${rangeHint}`,
+              metrics: [ck],
+            };
+          }
+        }
+      }
+    }
+  }
+
+  // Specific fiscal year / period wins over aggregate wording (e.g. "average ROE in FY 2021" → that year).
+  if (requestedPeriod) {
+    const keys = kinds.includes("all") ? ALL_RESULT_SQL_KEYS : mergeKindColumns(kinds);
+    const row = computed.find((r) => String(r.period) === String(requestedPeriod));
+    if (row) {
+      const periodRow = filterKeys(row, keys);
+      const y = row[chartMetric];
+      const num = typeof y === "number" && Number.isFinite(y) ? y : 0;
+      return {
+        sql,
+        table: [periodRow],
+        chartData: [{ name: String(requestedPeriod), sales: num }],
+        message: `Result for **${requestedPeriod}**.`,
+        chartType: "bar",
+        chartValueFormat: chartFmt,
+        insight: `Filtered to the requested period (${requestedPeriod}).`,
+        metrics: [chartMetric],
+      };
+    }
+  }
+
+  // Summary queries for formula outputs (average/median/highest/lowest/sum of flow metrics).
   // - If one kind: summarize that metric.
-  // - If multiple kinds: only support average (per-metric).
-  if ((wantsAverage || wantsHighest || wantsLowest) && !kinds.includes("all")) {
+  // - If multiple kinds: average/median/sum (per-metric where applicable).
+  if ((wantsAverage || wantsMedian || wantsHighest || wantsLowest || wantsSum) && !kinds.includes("all")) {
     const keys =
       kinds.length === 1
         ? mergeKindColumns(kinds)
-        : wantsAverage
+        : wantsAverage || wantsMedian || wantsSum
           ? mergeKindColumns(kinds)
           : [];
     const valueKeys = keys.filter((k) => k !== "period");
 
-    if (kinds.length === 1 && valueKeys.length >= 1 && (wantsAverage || wantsHighest || wantsLowest)) {
+    if (
+      kinds.length === 1 &&
+      valueKeys.length >= 1 &&
+      (wantsAverage || wantsMedian || wantsHighest || wantsLowest || wantsSum)
+    ) {
       const k = valueKeys[0]!;
-      const series = computed
+      const series = analysisRows
         .map((r) => ({ p: String(r.period), v: r[k] }))
         .filter((x): x is { p: string; v: number } => typeof x.v === "number" && Number.isFinite(x.v));
       if (series.length) {
@@ -1322,34 +1789,71 @@ export function executeCsvFinancialFormulas(
             chartData: [{ name: "Average", sales: rounded }],
             message: `Average ${label} across ${series.length} period(s).`,
             chartType: "bar",
-            chartValueFormat: chartIsPercent ? "percent" : undefined,
+            chartValueFormat: summaryChartFmt(k),
             insight: `Computed the mean of ${series.length} values from your CSV (${layoutDescription}).`,
             metrics: [k],
           };
         }
 
-        const pick = series.reduce((a, b) =>
-          wantsLowest ? (b.v < a.v ? b : a) : (b.v > a.v ? b : a),
-        );
-        const label = metricLabel(k);
-        const rounded = roundForMetric(k, pick.v);
-        return {
-          sql,
-          table: [{ period: pick.p, [label]: rounded }],
-          chartData: [{ name: pick.p, sales: rounded }],
-          message: `${wantsLowest ? "Lowest" : "Highest"} ${label} is **${rounded}** in **${pick.p}**.`,
-          chartType: "bar",
-          chartValueFormat: chartIsPercent ? "percent" : undefined,
-          insight: `Picked ${wantsLowest ? "minimum" : "maximum"} across ${series.length} period(s).`,
-          metrics: [k],
-        };
+        if (wantsHighest || wantsLowest) {
+          const pick = series.reduce((a, b) =>
+            wantsLowest ? (b.v < a.v ? b : a) : (b.v > a.v ? b : a),
+          );
+          const label = metricLabel(k);
+          const rounded = roundForMetric(k, pick.v);
+          return {
+            sql,
+            table: [{ period: pick.p, [label]: rounded }],
+            chartData: [{ name: pick.p, sales: rounded }],
+            message: `${wantsLowest ? "Lowest" : "Highest"} ${label} is **${rounded}** in **${pick.p}**.`,
+            chartType: "bar",
+            chartValueFormat: summaryChartFmt(k),
+            insight: `Picked ${wantsLowest ? "minimum" : "maximum"} across ${series.length} period(s).`,
+            metrics: [k],
+          };
+        }
+
+        if (wantsSum && metricIsSummable(k)) {
+          const total = series.reduce((s, x) => s + x.v, 0);
+          const rounded = roundForMetric(k, total);
+          const label = metricLabel(k);
+          return {
+            sql,
+            table: [{ period: "Total", [label]: rounded }],
+            chartData: [{ name: "Total", sales: rounded }],
+            message: `Total ${label} across ${series.length} period(s) (sum of per-period values).`,
+            chartType: "bar",
+            chartValueFormat: summaryChartFmt(k),
+            insight: `Summed ${series.length} per-period values from your CSV (${layoutDescription}).`,
+            metrics: [k],
+          };
+        }
+
+        if (wantsMedian) {
+          const sorted = [...series].sort((a, b) => a.v - b.v);
+          const mid = Math.floor(sorted.length / 2);
+          const med =
+            sorted.length % 2 === 1 ? sorted[mid]!.v : (sorted[mid - 1]!.v + sorted[mid]!.v) / 2;
+          const rounded = roundForMetric(k, med);
+          const label = metricLabel(k);
+          return {
+            sql,
+            table: [{ period: "Median", [label]: rounded }],
+            chartData: [{ name: "Median", sales: rounded }],
+            message: `Median ${label} across ${series.length} period(s).`,
+            chartType: "bar",
+            chartValueFormat: summaryChartFmt(k),
+            insight: `Computed the median of ${series.length} values from your CSV (${layoutDescription}).`,
+            metrics: [k],
+          };
+        }
       }
     }
 
     if (wantsAverage && valueKeys.length >= 1) {
       const avgRow: DataRow = { period: "Average" };
       for (const k of valueKeys) {
-        const nums = computed
+        const nums = analysisRows
           .map((r) => r[k])
           .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
         if (!nums.length) {
@@ -1371,36 +1875,98 @@ export function executeCsvFinancialFormulas(
         sql,
         table: [avgRow],
         chartData: [chartPoint],
-        message: `Average values across ${computed.length} period(s).`,
+        message: `Average values across ${analysisRows.length} period(s).`,
         chartType: valueKeys.length > 1 ? "multi-bar" : "bar",
-        chartValueFormat: chartIsPercent ? "percent" : undefined,
+        chartValueFormat: chartFmt,
         insight: `Computed per-metric means from your CSV (${layoutDescription}).`,
         metrics: valueKeys,
       };
     }
-  }
 
-  if (requestedPeriod) {
-    const keys = kinds.includes("all") ? ALL_RESULT_SQL_KEYS : mergeKindColumns(kinds);
-    const row = computed.find((r) => String(r.period) === String(requestedPeriod));
-    if (row) {
-      const periodRow = filterKeys(row, keys);
-      const y = row[chartMetric];
-      const num = typeof y === "number" && Number.isFinite(y) ? y : 0;
+    if (wantsMedian && valueKeys.length >= 1) {
+      const medRow: DataRow = { period: "Median" };
+      for (const k of valueKeys) {
+        const nums = analysisRows
+          .map((r) => r[k])
+          .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+          .sort((a, b) => a - b);
+        if (!nums.length) {
+          medRow[metricLabel(k)] = "—";
+          continue;
+        }
+        const mid = Math.floor(nums.length / 2);
+        const med =
+          nums.length % 2 === 1 ? nums[mid]! : (nums[mid - 1]! + nums[mid]!) / 2;
+        medRow[metricLabel(k)] = roundForMetric(k, med);
+      }
+
+      const chartPoint: { name: string; [key: string]: unknown } = { name: "Median" };
+      for (const k of valueKeys) {
+        const label = metricLabel(k);
+        const v = medRow[label];
+        if (typeof v === "number") chartPoint[label] = v;
+      }
+
       return {
         sql,
-        table: [periodRow],
-        chartData: [{ name: String(requestedPeriod), sales: num }],
-        message: `Result for **${requestedPeriod}**.`,
-        chartType: "bar",
-        chartValueFormat: chartIsPercent ? "percent" : undefined,
-        insight: `Filtered to the requested period (${requestedPeriod}).`,
-        metrics: [chartMetric],
+        table: [medRow],
+        chartData: [chartPoint],
+        message: `Median values across ${analysisRows.length} period(s).`,
+        chartType: valueKeys.length > 1 ? "multi-bar" : "bar",
+        chartValueFormat: chartFmt,
+        insight: `Computed per-metric medians from your CSV (${layoutDescription}).`,
+        metrics: valueKeys,
       };
+    }
+
+    if (wantsSum && valueKeys.length >= 1) {
+      const sumKeys = summableKeysForSumQuery(lowerInput, kinds, valueKeys);
+      if (sumKeys.length) {
+        const sumRow: DataRow = { period: "Total" };
+        for (const k of sumKeys) {
+          const nums = analysisRows
+            .map((r) => r[k])
+            .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+          if (!nums.length) {
+            sumRow[metricLabel(k)] = "—";
+            continue;
+          }
+          sumRow[metricLabel(k)] = roundForMetric(k, nums.reduce((s, x) => s + x, 0));
+        }
+
+        const chartMetricSum = sumKeys.includes(chartMetric) ? chartMetric : sumKeys[0]!;
+        const sumLabel = metricLabel(chartMetricSum);
+        const salesNum =
+          typeof sumRow[sumLabel] === "number" && Number.isFinite(sumRow[sumLabel] as number)
+            ? (sumRow[sumLabel] as number)
+            : 0;
+
+        const chartPoint: { name: string; [key: string]: unknown } = { name: "Total" };
+        for (const k of sumKeys) {
+          const label = metricLabel(k);
+          const v = sumRow[label];
+          if (typeof v === "number") chartPoint[label] = v;
+        }
+
+        return {
+          sql,
+          table: [sumRow],
+          chartData:
+            sumKeys.length === 1 ? [{ name: "Total", sales: salesNum }] : [chartPoint],
+          message:
+            sumKeys.length === 1
+              ? `Total ${metricLabel(sumKeys[0]!)} across ${analysisRows.length} period(s) (sum of per-period values).`
+              : `Totalled **${sumKeys.map(metricLabel).join(", ")}** across ${analysisRows.length} period(s).`,
+          chartType: sumKeys.length > 1 ? "multi-bar" : "bar",
+          chartValueFormat: summaryChartFmt(chartMetricSum),
+          insight: `Summed additive line items from your CSV (${layoutDescription}); ratios and growth % columns are omitted.`,
+          metrics: sumKeys,
+        };
+      }
     }
   }
 
-  const chartData = computed.map((row) => {
+  const chartData = analysisRows.map((row) => {
     const y = row[chartMetric];
     const num = typeof y === "number" && Number.isFinite(y) ? y : 0;
     return { name: String(row.period), sales: num };
@@ -1413,14 +1979,16 @@ export function executeCsvFinancialFormulas(
         : kinds[0].replace(/_/g, " ")
       : kinds.map((k) => k.replace(/_/g, " ")).join(" + ");
 
-  const message =
+  const messageBase =
     kinds.length === 1 && kinds[0] === "all"
       ? `Financial ratios by period from your CSV (${layoutDescription}).`
       : kinds.length === 1 && kinds[0] === "ebitda_absolute"
         ? `EBITDA amounts by period (${layoutDescription}).`
         : `Results for “${kindLabel}” (${layoutDescription}).`;
+  const message = rangeHint ? `${messageBase}${rangeHint}` : messageBase;
 
-  const insight = buildFormulaInsights(kinds, table, computed, pivot, layoutDescription);
+  const insightBase = buildFormulaInsights(kinds, table, analysisRows, pivot, layoutDescription);
+  const insight = rangeHint ? `${insightBase}${rangeHint}` : insightBase;
 
   return {
     sql,
@@ -1428,7 +1996,7 @@ export function executeCsvFinancialFormulas(
     chartData,
     message,
     chartType: "line",
-    chartValueFormat: chartIsPercent ? "percent" : undefined,
+    chartValueFormat: chartFmt,
     insight,
     metrics: [chartMetric],
   };

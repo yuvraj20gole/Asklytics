@@ -13,24 +13,20 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ComposedChart,
-  Area,
 } from "recharts";
 import { useData } from "../contexts/data-context";
-import { useHistory } from "../contexts/history-context";
 import { 
   AlertCircle, 
   TrendingUp, 
   DollarSign, 
   PieChart as PieChartIcon,
   Users,
-  Mail,
   BarChart3,
   Activity,
   RotateCcw,
   Calendar,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { useMotionPageEffects } from "../hooks/use-motion-page-effects";
 import { useChartColors } from "../hooks/use-chart-colors";
 import {
@@ -46,9 +42,9 @@ import { canUseCsvFormulaEngine } from "../utils/financial-formulas-csv";
 
 export function Analytics() {
   const { data, isDataLoaded } = useData();
-  const { history } = useHistory();
   const [activeTab, setActiveTab] = useState("overview");
   const colors = useChartColors();
+  const analyticsRunId = useId().replace(/[:]/g, "");
 
   const rootRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
@@ -89,9 +85,6 @@ export function Analytics() {
     if (!rows || rows.length === 0 || !columns || columns.length === 0) {
       return null;
     }
-
-    // Create a unique counter for this analytics generation
-    const uniqueCounter = Math.random().toString(36).substring(2, 15);
 
     // Detect currency from dataset
     let currency = "₹"; // Default to INR
@@ -219,7 +212,7 @@ export function Analytics() {
       .sort((a, b) => b._tot - a._tot)
       .slice(0, 15)
       .map(({ name, value, value2 }, index) => ({
-        id: `item-${index}-${uniqueCounter}`,
+        id: `item-${analyticsRunId}-${index}`,
         name,
         value,
         value2,
@@ -268,7 +261,7 @@ export function Analytics() {
         .slice(0, 30)
         .map(([period, values], index) => {
           // Create absolutely unique ID and period to prevent duplicate keys
-          const uniqueId = `time-${uniqueCounter}-${index}`;
+          const uniqueId = `time-${analyticsRunId}-${index}`;
           
           // Create a truly unique display period by always including index
           let displayPeriod = period.length > 15 ? period.slice(0, 12) + "..." : period;
@@ -303,14 +296,12 @@ export function Analytics() {
         timeGrouped[existingKey].value2 += v2;
       });
 
-      const usedFallbackPeriods = new Set<string>();
-      
       timeSeriesData = Object.entries(timeGrouped)
         .sort(([a], [b]) => a.localeCompare(b))
         .slice(0, 30)
         .map(([period, values], index) => {
           // Create absolutely unique ID and period to prevent duplicate keys
-          const uniqueId = `time-${uniqueCounter}-${index}`;
+          const uniqueId = `time-${analyticsRunId}-${index}`;
           
           // Create a truly unique display period by always including index
           let displayPeriod = period.length > 15 ? period.slice(0, 12) + "..." : period;
@@ -388,9 +379,8 @@ export function Analytics() {
       totalExpensesTimeSeries,
       currency,
       dateColumn: dateColumn || "Period",
-      uniqueCounter, // Add this for chart keys
     };
-  }, [data, isDataLoaded]);
+  }, [data, isDataLoaded, analyticsRunId]);
 
   if (!isDataLoaded) {
     return (

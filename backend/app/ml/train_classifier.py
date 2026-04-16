@@ -1,12 +1,15 @@
 """
 Fine-tune FinBERT (ProsusAI/finbert) for 4-way financial line classification.
 Run from repo root: PYTHONPATH=backend python -m app.ml.train_classifier
+
+Large shard (optional): PYTHONPATH=backend python -m app.ml.generate_financial_bulk_csv --rows 8000
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -36,8 +39,23 @@ ML_DIR = Path(__file__).resolve().parent
 DATA_FILES = [
     ML_DIR / "data" / "financial_dataset.csv",
     ML_DIR / "data" / "financial_dataset_extended.csv",
+    ML_DIR / "data" / "financial_dataset_bulk.csv",
 ]
 OUTPUT_DIR = ML_DIR / "model"
+# Metrics/reports here survive in git (weights stay under OUTPUT_DIR, gitignored).
+REPORTS_DIR = ML_DIR / "training_reports"
+
+
+def _json_sanitize(obj: object) -> object:
+    if isinstance(obj, dict):
+        return {str(k): _json_sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_sanitize(v) for v in obj]
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, float | int | str | bool) or obj is None:
+        return obj
+    return str(obj)
 
 
 class FinancialLineDataset(torch.utils.data.Dataset):
@@ -189,17 +207,16 @@ def main() -> None:
     val_pred = trainer.predict(val_dataset)
     pred_ids = np.argmax(val_pred.predictions, axis=-1)
     names = [ID2LABEL[i] for i in range(len(LABEL_MAP))]
-    print("\n=== Validation classification report ===")
-    print(
-        classification_report(
-            val_pred.label_ids,
-            pred_ids,
-            labels=list(range(len(LABEL_MAP))),
-            target_names=names,
-            digits=4,
-            zero_division=0,
-        )
+    report_str = classification_report(
+        val_pred.label_ids,
+        pred_ids,
+        labels=list(range(len(LABEL_MAP))),
+        target_names=names,
+        digits=4,
+        zero_division=0,
     )
+    print("\n=== Validation classification report ===")
+    print(report_str)
     acc = accuracy_score(val_pred.label_ids, pred_ids)
     p_w, r_w, f_w, _ = precision_recall_fscore_support(
         val_pred.label_ids, pred_ids, average="weighted", zero_division=0
@@ -209,6 +226,62 @@ def main() -> None:
         f"Recall (weighted): {r_w:.4f} | F1 (weighted): {f_w:.4f}"
     )
     print("Saved model, tokenizer, and label_map.json to", OUTPUT_DIR)
+
+    report_dict = classification_report(
+        val_pred.label_ids,
+        pred_ids,
+        labels=list(range(len(LABEL_MAP))),
+        target_names=names,
+        digits=4,
+        zero_division=0,
+        output_dict=True,
+    )
+    p_m, r_m, f_m, _ = precision_recall_fscore_support(
+        val_pred.label_ids, pred_ids, average="macro", zero_division=0
+    )
+
+    summary = _json_sanitize(
+        {
+            "trained_at": datetime.now(timezone.utc).isoformat(),
+            "base_model": MODEL_NAME,
+            "model_output_dir": str(OUTPUT_DIR.resolve()),
+            "dataset": {
+                "rows_after_profit_oversample": int(len(df)),
+                "label_counts": {str(k): int(v) for k, v in df["label"].value_counts().items()},
+                "train_rows": int(len(train_dataset)),
+                "val_rows": int(len(val_dataset)),
+                "data_shards": [p.name for p in DATA_FILES if p.is_file()],
+            },
+            "train_summary_metrics": metrics,
+            "validation": {
+                "accuracy": float(acc),
+                "precision_weighted": float(p_w),
+                "recall_weighted": float(r_w),
+                "f1_weighted": float(f_w),
+                "precision_macro": float(p_m),
+                "recall_macro": float(r_m),
+                "f1_macro": float(f_m),
+                "per_class": report_dict,
+            },
+            "training_args": {
+                "max_epochs": training_args.num_train_epochs,
+                "per_device_train_batch_size": training_args.per_device_train_batch_size,
+                "early_stopping_patience": 2,
+            },
+        }
+    )
+
+    metrics_path = OUTPUT_DIR / "training_metrics.json"
+    report_path = OUTPUT_DIR / "validation_report.txt"
+    metrics_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    report_path.write_text(report_str, encoding="utf-8")
+
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    (REPORTS_DIR / "finbert_latest.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    (REPORTS_DIR / "finbert_latest_validation_report.txt").write_text(report_str, encoding="utf-8")
+
+    logger.info("Wrote metrics to %s and %s", metrics_path, REPORTS_DIR / "finbert_latest.json")
+    logger.info("Wrote validation report to %s", report_path)
 
 
 if __name__ == "__main__":

@@ -555,6 +555,5 @@ export function useMotionPageEffects(config: MotionPageEffectsConfig): void {
       ctx.revert();
       root.style.perspective = "";
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

@@ -4,6 +4,8 @@ import { useLayoutEffect, type RefObject } from "react";
 
 export type ScrollAnimationVariant = "fadeUp" | "scaleIn";
 
+gsap.registerPlugin(ScrollTrigger);
+
 export type UseScrollAnimationOptions = {
   variant?: ScrollAnimationVariant;
   /** Extra delay before animation (seconds). */

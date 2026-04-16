@@ -1,13 +1,19 @@
 import type { DataRow, QueryResult } from "../types/data";
 import { isFinancialFactsLayout } from "./analytics-infer";
-import { executeCsvFinancialFormulas, canUseCsvFormulaEngine } from "./financial-formulas-csv";
+import {
+  canUseCsvFormulaEngine,
+  detectCsvFormulaKinds,
+  executeCsvFinancialFormulas,
+  type FormulaKind,
+} from "./financial-formulas-csv";
+import { inferCurrencyPrefix } from "./currency-infer";
 
 export type { QueryResult } from "../types/data";
 
-// Detect currency from data - FORCE INR for consistency
-function detectCurrency(data: DataRow[]): string {
-  // ALWAYS use INR for consistency
-  return '₹';
+// Currency symbol for chat copy (column names / optional currency column).
+function detectCurrency(data: DataRow[], columns?: string[]): string {
+  const cols = columns?.length ? columns : Object.keys(data[0] ?? {});
+  return inferCurrencyPrefix(data, cols);
 }
 
 // Financial keywords mapping
@@ -318,7 +324,7 @@ function executeLongFactsStructuredQuery(
   if (!yearCol || !metricCol || !valueCol) return null;
 
   const lower = userInput.toLowerCase();
-  const cur = detectCurrency(data);
+  const cur = detectCurrency(data, columns);
 
   const apex = rawCol ? apexSeriesFromLongFactRows(data, rawCol) : [];
   const apexOk = apex.length >= 2;
@@ -640,7 +646,7 @@ function executeLongFactsStructuredQuery(
     const best = series.reduce((a, b) => (a.value >= b.value ? a : b));
     const worst = series.reduce((a, b) => (a.value <= b.value ? a : b));
     let wantHigh = lower.includes("highest") || lower.includes("maximum") || lower.includes("best");
-    let wantLow = lower.includes("lowest") || lower.includes("minimum") || lower.includes("worst");
+    const wantLow = lower.includes("lowest") || lower.includes("minimum") || lower.includes("worst");
     if (!wantHigh && !wantLow) wantHigh = true;
     const sql = `-- Long facts: net profit by year\nSELECT ${yearCol}, ${metricCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%net%profit%'\n   OR LOWER(CAST(${metricCol} AS TEXT)) LIKE '%net_income%'\n   OR LOWER(CAST(${metricCol} AS TEXT)) LIKE '%pat%';`;
     if (wantHigh && wantLow) {
@@ -810,6 +816,72 @@ function executeLongFactsStructuredQuery(
   return null;
 }
 
+function formulaKindDisplayNames(kinds: FormulaKind[]): string {
+  const map: Partial<Record<FormulaKind, string>> = {
+    debt_to_equity: "Debt-to-equity ratio",
+    current_ratio: "Current ratio",
+    quick_ratio: "Quick ratio",
+    interest_coverage: "Interest coverage",
+    roe: "Return on equity (ROE)",
+    roa: "Return on assets (ROA)",
+    roce: "Return on capital employed (ROCE)",
+    gross_margin: "Gross margin",
+    operating_margin: "Operating margin",
+    ebitda_margin: "EBITDA margin",
+    net_margin: "Net profit margin",
+    asset_turnover: "Asset turnover",
+    inventory_days: "Inventory days",
+    receivable_days: "Receivable days",
+    payable_days: "Payable days",
+    eps: "EPS",
+    pe: "P/E ratio",
+    yoy: "Year-over-year growth",
+    gross_profit: "Gross profit",
+    ebitda_absolute: "EBITDA",
+    all: "Full financial ratios",
+  };
+  return kinds.map((k) => map[k] ?? k.replace(/_/g, " ")).join(" + ");
+}
+
+/** User asked for a computed ratio/metric but the sheet cannot run the formula engine (or pivot failed). */
+function formulaIntentWithoutEngineSupport(
+  userInput: string,
+  kinds: FormulaKind[],
+  reason: "sheet_layout" | "pivot_empty",
+): QueryResult {
+  const title = formulaKindDisplayNames(kinds);
+  const balanceHint =
+    kinds.includes("debt_to_equity") ||
+    kinds.includes("current_ratio") ||
+    kinds.includes("quick_ratio") ||
+    kinds.includes("roe") ||
+    kinds.includes("roa") ||
+    kinds.includes("roce")
+      ? "This usually needs **balance sheet** lines in the file (e.g. total borrowings/debt and shareholders’ equity, or current assets/liabilities), not only a single P&L revenue column."
+      : "The upload needs additional numeric line-item columns that map to this metric.";
+
+  const msg =
+    reason === "pivot_empty"
+      ? `You asked for **${title}**, but no periods could be built from the rows (check year/period and numeric values).`
+      : `You asked for **${title}**. ${balanceHint}`;
+
+  return {
+    sql: `-- ${kinds.join(", ")}: requires classified financial columns (wide or long facts layout).`,
+    table: [
+      {
+        Topic: title,
+        Status: reason === "pivot_empty" ? "No periods in pivot" : "Not enough structured columns",
+        Detail: msg,
+      },
+    ],
+    chartData: [],
+    message: msg,
+    chartType: "bar",
+    insight:
+      "Try **Analytics** for ratio dashboards, or upload a CSV with **Year** (or period) plus the balance-sheet and P&L lines needed for this metric. For revenue-only sheets, ask about **revenue**, **profit**, or **expenses** you actually have columns for.",
+  };
+}
+
 export function executeQuery(
   userInput: string,
   data: DataRow[],
@@ -817,9 +889,14 @@ export function executeQuery(
 ): QueryResult {
   const lowerInput = userInput.toLowerCase();
 
-  if (canUseCsvFormulaEngine(columns, data)) {
-    const formulaHit = executeCsvFinancialFormulas(userInput, data, columns);
-    if (formulaHit) return formulaHit;
+  const kindsFromQuestion = detectCsvFormulaKinds(lowerInput);
+  if (kindsFromQuestion?.length) {
+    if (canUseCsvFormulaEngine(columns, data)) {
+      const formulaHit = executeCsvFinancialFormulas(userInput, data, columns);
+      if (formulaHit) return formulaHit;
+      return formulaIntentWithoutEngineSupport(userInput, kindsFromQuestion, "pivot_empty");
+    }
+    return formulaIntentWithoutEngineSupport(userInput, kindsFromQuestion, "sheet_layout");
   }
 
   const longFactsHit = executeLongFactsStructuredQuery(userInput, data, columns);
@@ -1015,10 +1092,8 @@ export function executeQuery(
     }
     const total = data.reduce((sum, row) => sum + (Number(row[valueColumn!]) || 0), 0);
     
-    const results = [{ metric: "Total", value: total }];
-    
     const sql = `SELECT SUM(${valueColumn}) as total FROM uploaded_data;`;
-    const currency = detectCurrency(data);
+    const currency = detectCurrency(data, columns);
     const message = `The total ${valueColumn} is ${currency}${total.toLocaleString()}`;
     
     const insight = `Total ${valueColumn} across all records is ${currency}${total.toLocaleString()}. This represents the complete sum of ${data.length} data entries.`;
@@ -1109,7 +1184,7 @@ export function executeQuery(
         }
       });
       
-      const currency = detectCurrency(data);
+      const currency = detectCurrency(data, columns);
       
       // Build summary table
       const summaryTable = [
@@ -1135,7 +1210,6 @@ export function executeQuery(
       // Comprehensive insight with correct trend
       const firstYear = yearlyData[0];
       const lastYear = yearlyData[yearlyData.length - 1];
-      const trendDirection = lastYear.revenue > firstYear.revenue ? "growth" : "decline";
       const trendDescription = lastYear.revenue > firstYear.revenue ? "increasing" : "declining";
       
       const insight = `Complete Financial Summary: Total revenue of ${currency}${totalRevenue.toLocaleString()} with ${currency}${totalExpense.toLocaleString()} in expenses, resulting in ${currency}${totalProfit.toLocaleString()} profit (${overallMargin.toFixed(1)}% margin). Revenue shows ${trendDescription} trend from ${firstYear.year} to ${lastYear.year} with average year-over-year growth of ${avgGrowth > 0 ? '+' : ''}${avgGrowth.toFixed(1)}%. ${bestYear.year} was the best performing year with ${currency}${bestYear.profit.toLocaleString()} profit and ${bestYear.margin.toFixed(1)}% margin, driven by strong profitability${avgGrowth > 0 ? ' and consistent growth' : ''}.`;
@@ -1178,7 +1252,7 @@ export function executeQuery(
 
       const sql = `SELECT \n  ${gCol},\n  SUM(${revenueCol}) - SUM(${expenseCol}) as profit,\n  SUM(${revenueCol}) as revenue,\n  SUM(${expenseCol}) as expense\nFROM uploaded_data\nGROUP BY ${gCol}\nORDER BY profit DESC\nLIMIT 10;`;
 
-      const currency = detectCurrency(results);
+      const currency = detectCurrency(results, columns);
 
       const formattedTable = results.map((row) => ({
         [gCol]: row[gCol],
@@ -1223,7 +1297,7 @@ export function executeQuery(
     
     const sql = `SELECT \n  ${gCol},\n  SUM(${vCol}) as ${vCol},\n  ROUND(((SUM(${vCol}) - LAG(SUM(${vCol})) OVER (ORDER BY ${gCol})) / LAG(SUM(${vCol})) OVER (ORDER BY ${gCol})) * 100, 1) as growth_rate\nFROM uploaded_data\nGROUP BY ${gCol}\nORDER BY ${gCol} ASC;`;
     
-    const currency = detectCurrency(resultsWithGrowth);
+    const currency = detectCurrency(resultsWithGrowth, columns);
     
     const formattedTable = resultsWithGrowth.map((row) => ({
       [gCol]: row[gCol],
@@ -1313,7 +1387,7 @@ export function executeQuery(
 
       const sql = `SELECT \n  ${gCol},\n  SUM(${revenueCol}) as revenue,\n  SUM(${expenseCol}) as expense,\n  SUM(${revenueCol}) - SUM(${expenseCol}) as profit,\n  ROUND(((SUM(${revenueCol}) - SUM(${expenseCol})) / SUM(${revenueCol})) * 100, 2) as profit_margin\nFROM uploaded_data\nGROUP BY ${gCol}\nORDER BY ${isTimeBased ? gCol : 'revenue'} ${isTimeBased ? 'ASC' : 'DESC'}\nLIMIT 10;`;
 
-      const currency = detectCurrency(results);
+      const currency = detectCurrency(results, columns);
       
       const formattedTable = results.map((row) => ({
         [gCol]: row[gCol],
@@ -1412,7 +1486,7 @@ GROUP BY ${groupColumn}
 ORDER BY ${groupColumn} ASC
 LIMIT 10;`;
 
-      const currency = detectCurrency(data);
+      const currency = detectCurrency(data, columns);
       const formattedTable = rows.map((row) => ({
         [groupColumn]: row[groupColumn],
         [revenueCol]: `${currency}${(row[revenueCol] as number).toLocaleString()}`,
@@ -1594,7 +1668,7 @@ LIMIT 10;`;
         const topResult = results[0];
         const yearValue = topResult[groupColumn];
         const profitValue = topResult[valueColumn];
-        const currency = detectCurrency(results);
+        const currency = detectCurrency(results, columns);
         message = `You earned the ${wantsBottom ? "lowest" : "highest"} ${valueColumn} in ${yearValue} with ${currency}${(profitValue as number).toLocaleString()}`;
       } else {
         message = `Here are your results by ${valueColumn}:`;
@@ -1621,7 +1695,7 @@ LIMIT 10;`;
         : valueColumn;
 
     // NEW: Generate insight
-    const currency = detectCurrency(results);
+    const currency = detectCurrency(results, columns);
     const insight = generateInsight(
       results,
       groupColumn,
@@ -1658,7 +1732,7 @@ LIMIT 10;`;
   }
 
   // Generate insight for fallback data
-  const currency = detectCurrency(results);
+  const currency = detectCurrency(results, columns);
   const fallbackInsight = generateFallbackInsight(results, columns, valueColumn, currency);
 
   return {
@@ -1735,7 +1809,7 @@ function countBy(data: DataRow[], groupCol: string): Record<string, number> {
 }
 
 function formatTable(results: DataRow[]): DataRow[] {
-  const currency = detectCurrency(results);
+  const currency = detectCurrency(results, columns);
   return results.map((row) => {
     const formatted: DataRow = {};
     for (const [key, value] of Object.entries(row)) {
@@ -1787,21 +1861,12 @@ function formatChart(results: DataRow[]): Array<{ name: string; [key: string]: a
 
     // Fallback: if no numeric values found, use "sales" key with 0
     if (Object.keys(chartRow).length === 1) {
-      const valueCol = entries.find(([k, v]) => typeof v === "number")?.[0] || entries[1]?.[0];
+      const valueCol = entries.find(([, v]) => typeof v === "number")?.[0] || entries[1]?.[0];
       chartRow["sales"] = valueCol ? Number(row[valueCol]) || 0 : 0;
     }
 
     return chartRow;
   });
-}
-
-// NEW: Financial Calculations Engine
-interface FinancialMetrics {
-  profit: number;
-  profitMargin: number;
-  growth: number;
-  revenue: number;
-  expense: number;
 }
 
 function calculateGrowthRate(data: DataRow[], groupCol: string, valueCol: string): Array<{
@@ -2036,13 +2101,6 @@ function detectTrendWithDetails(values: number[]): { trend: string; description:
   if (overallChange > 0) return { trend: "mixed-positive", description: "shows overall growth with some fluctuations" };
   if (overallChange < 0) return { trend: "mixed-negative", description: "shows overall decline with fluctuations" };
   return { trend: "stable", description: "remains stable" };
-}
-
-// NEW: Trend Detection (simplified for backward compatibility)
-function detectTrend(values: number[]): string {
-  return detectTrendWithDetails(values).trend === "upward" ? "an upward" :
-         detectTrendWithDetails(values).trend === "downward" ? "a downward" :
-         "a stable";
 }
 
 // NEW: Anomaly Detection

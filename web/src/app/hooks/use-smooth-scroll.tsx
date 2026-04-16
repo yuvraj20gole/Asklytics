@@ -6,7 +6,6 @@ import {
   useContext,
   useLayoutEffect,
   useRef,
-  useState,
   type ReactNode,
 } from "react";
 import { useLocation } from "react-router";
@@ -36,7 +35,6 @@ type SmoothScrollProviderProps = {
 export function SmoothScrollProvider({ children }: SmoothScrollProviderProps) {
   const location = useLocation();
   const lenisRef = useRef<Lenis | null>(null);
-  const [lenis, setLenis] = useState<Lenis | null>(null);
 
   useLayoutEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -50,7 +48,6 @@ export function SmoothScrollProvider({ children }: SmoothScrollProviderProps) {
     });
 
     lenisRef.current = instance;
-    setLenis(instance);
 
     instance.on("scroll", ScrollTrigger.update);
 
@@ -66,7 +63,6 @@ export function SmoothScrollProvider({ children }: SmoothScrollProviderProps) {
       gsap.ticker.remove(ticker);
       instance.destroy();
       lenisRef.current = null;
-      setLenis(null);
       ScrollTrigger.refresh();
     };
   }, []);
@@ -78,7 +74,7 @@ export function SmoothScrollProvider({ children }: SmoothScrollProviderProps) {
   }, [location.pathname]);
 
   return (
-    <SmoothScrollContext.Provider value={{ lenis }}>
+    <SmoothScrollContext.Provider value={{ lenis: lenisRef.current }}>
       {children}
     </SmoothScrollContext.Provider>
   );

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Upload, FileText, Database, Sparkles, ArrowRight, CheckCircle2, AlertCircle } from "lucide-react";
+import { Upload, FileText, Database, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
 import { useData } from "../contexts/data-context";
 import { parseFile } from "../utils/file-parser";
 import { useMotionPageEffects } from "../hooks/use-motion-page-effects";

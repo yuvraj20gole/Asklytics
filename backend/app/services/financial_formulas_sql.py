@@ -7,6 +7,8 @@ inventory, receivables, payables, total_debt, interest_expense, shares, share_pr
 If a fact is missing, the corresponding formula column is NULL.
 """
 
+import re
+
 # Pivot: one row per period with common metrics as columns.
 PIVOT_SUBQUERY = """
 SELECT period,
@@ -111,6 +113,12 @@ SQL_EBITDA_MARGIN = (
     "FROM enriched ORDER BY period"
 )
 
+SQL_NET_PROFIT_MARGIN = (
+    _with_pivot_prefix()
+    + "SELECT period, ROUND(100.0 * net_income / NULLIF(revenue, 0), 2) AS net_profit_margin_pct "
+    "FROM enriched ORDER BY period"
+)
+
 SQL_YOY_GROWTH = (
     _with_pivot_prefix()
     + "SELECT period, revenue, net_income, "
@@ -198,4 +206,63 @@ SQL_PE_RATIO = (
     _with_pivot_prefix()
     + "SELECT period, ROUND(1.0 * share_price * shares / NULLIF(net_income, 0), 2) AS pe_ratio "
     "FROM enriched ORDER BY period"
+)
+
+
+def period_year_filter_sql(question_lower: str) -> str | None:
+    """SQLite predicate on `period` for an inclusive FY/year range (matches substrings like 2021 / FY2021)."""
+    m = re.search(r"between\s+(\d{4})\s+and\s+(\d{4})", question_lower)
+    if not m:
+        m = re.search(r"\b(\d{4})\s*[-–—]\s*(\d{4})\b", question_lower)
+    if not m:
+        m = re.search(r"from\s+(\d{4})\s+(?:to|through|until)\s+(\d{4})", question_lower)
+    if not m:
+        return None
+    lo, hi = sorted((int(m.group(1)), int(m.group(2))))
+    parts = [f"CAST(period AS TEXT) LIKE '%{y}%'" for y in range(lo, hi + 1)]
+    return "(" + " OR ".join(parts) + ")"
+
+
+def apply_period_filter_to_formula_sql(sql: str, predicate: str) -> str:
+    """Restrict the final `FROM enriched ... ORDER BY period` clause (template formulas only)."""
+    marker = "FROM enriched"
+    idx = sql.upper().rfind(marker.upper())
+    if idx == -1:
+        return sql
+    tail = sql[idx + len(marker) :]
+    order_at = tail.upper().find("ORDER BY")
+    if order_at == -1:
+        return sql
+    between = tail[:order_at]
+    order_part = tail[order_at:]
+    if " WHERE " in between.upper():
+        new_between = between.rstrip() + " AND (" + predicate + ") "
+    else:
+        new_between = " WHERE (" + predicate + ") " + between.lstrip()
+    return sql[:idx] + marker + new_between + order_part
+
+
+# Pooling / averages over periods (SQLite); use for templated “total revenue”, “average ROE”, etc.
+SQL_ROE_AVG = (
+    _with_pivot_prefix()
+    + "SELECT ROUND(AVG(roe_pct), 2) AS roe_pct_avg FROM ("
+    + "SELECT period, ROUND(100.0 * net_income / NULLIF(equity, 0), 2) AS roe_pct "
+    + "FROM enriched) AS x WHERE roe_pct IS NOT NULL"
+)
+
+SQL_NET_MARGIN_AVG = (
+    _with_pivot_prefix()
+    + "SELECT ROUND(AVG(net_profit_margin_pct), 2) AS net_profit_margin_pct_avg FROM ("
+    + "SELECT period, ROUND(100.0 * net_income / NULLIF(revenue, 0), 2) AS net_profit_margin_pct "
+    + "FROM enriched WHERE revenue IS NOT NULL) AS x WHERE net_profit_margin_pct IS NOT NULL"
+)
+
+SQL_TOTAL_REVENUE = (
+    _with_pivot_prefix()
+    + "SELECT ROUND(SUM(revenue), 2) AS revenue_total FROM enriched WHERE revenue IS NOT NULL"
+)
+
+SQL_TOTAL_NET_INCOME = (
+    _with_pivot_prefix()
+    + "SELECT ROUND(SUM(net_income), 2) AS net_income_total FROM enriched WHERE net_income IS NOT NULL"
 )

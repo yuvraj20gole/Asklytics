@@ -168,7 +168,7 @@ async function parseCSV(file: File): Promise<ParseResult> {
               rows: processedRows,
             }],
           });
-        } catch (err) {
+        } catch {
           resolve({
             success: false,
             error: "Failed to process the CSV file. Please check the format.",

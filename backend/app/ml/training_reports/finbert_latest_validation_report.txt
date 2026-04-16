@@ -1,0 +1,10 @@
+              precision    recall  f1-score   support
+
+     revenue     1.0000    0.9925    0.9963       268
+     expense     0.9964    1.0000    0.9982       280
+      profit     0.9981    1.0000    0.9991       539
+       other     1.0000    1.0000    1.0000       258
+
+    accuracy                         0.9985      1345
+   macro avg     0.9986    0.9981    0.9984      1345
+weighted avg     0.9985    0.9985    0.9985      1345

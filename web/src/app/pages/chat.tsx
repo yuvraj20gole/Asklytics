@@ -223,17 +223,20 @@ function buildChartSpecFromServerRows(rows: Array<Record<string, unknown>>): {
 const LS_UPLOADED_FILE_NAME = "uploaded_file";
 const LS_UPLOADED_FILE_KIND = "asklytics_uploaded_file_kind";
 
+function nextMessageId(prev: Message[]): number {
+  return 1 + Math.max(0, ...prev.map((m) => m.id));
+}
+
 export function Chat() {
   const rootRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const titleRowRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Chat is a functional screen: skip scroll-scrub hero/tilt on the thread (it fought layout + scroll).
   useMotionPageEffects({
     root: rootRef,
     header: navRef,
-    hero: { section: contentRef, layers: [titleRowRef] },
-    parallaxInners: [{ section: rootRef, inner: contentRef }],
   });
 
   const { data, setData, isDataLoaded } = useData();
@@ -271,9 +274,12 @@ export function Chat() {
       localStorage.removeItem("asklytics_chat_messages");
     } else if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        console.log("📥 Loaded messages from localStorage:", parsed.length);
-        return parsed;
+        const parsed = JSON.parse(saved) as Message[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log("📥 Loaded messages from localStorage:", parsed.length);
+          // Sequential ids fix duplicate keys / stale id schemes from older builds.
+          return parsed.map((m, i) => ({ ...m, id: i + 1 }));
+        }
       } catch {
         // If parsing fails, return default message
         console.log("❌ Failed to parse saved messages");
@@ -298,6 +304,16 @@ export function Chat() {
   // Save messages to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem("asklytics_chat_messages", JSON.stringify(messages));
+  }, [messages]);
+
+  // Lenis (root layout) smooth-scrolls the window; drive this pane explicitly so wheels aren't swallowed.
+  useEffect(() => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    const t = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(t);
   }, [messages]);
 
   const generateResponse = (userInput: string): Omit<Message, "id"> => {
@@ -438,12 +454,6 @@ export function Chat() {
     const q = input.trim();
     if (!q || !canChat) return;
 
-    const userMessage: Message = {
-      id: messages.length + 1,
-      type: "user",
-      content: q,
-    };
-
     // In-memory sheet (CSV/Excel or PDF/image facts in the same shape): run the same client pipeline as CSV
     // (financial formula engine, heuristics, display SQL). Avoids /ask + sql_guard for ratio-style questions.
     const token = getToken();
@@ -489,11 +499,11 @@ export function Chat() {
         } catch (err) {
           const msg = formatApiErrorForChat(err);
           setMessages((prev) => {
-            const base = prev.length;
+            const uid = nextMessageId(prev);
             return [
               ...prev,
-              { id: base + 1, type: "user", content: q },
-              { id: base + 2, type: "ai", content: `Error: ${msg}` },
+              { id: uid, type: "user", content: q },
+              { id: uid + 1, type: "ai", content: `Error: ${msg}` },
             ];
           });
           return;
@@ -532,12 +542,10 @@ export function Chat() {
         imageIngestMeta: imageMeta,
       };
 
-      const aiMessage: Message = {
-        id: messages.length + 2,
-        ...responseData,
-      };
-
-      setMessages([...messages, userMessage, aiMessage]);
+      setMessages((prev) => {
+        const uid = nextMessageId(prev);
+        return [...prev, { id: uid, type: "user", content: q }, { id: uid + 1, ...responseData }];
+      });
       setInput("");
 
       if (responseData.sql && responseData.table) {
@@ -572,9 +580,9 @@ export function Chat() {
           insight: res.explanation,
         };
         setMessages((prev) => {
-          const base = prev.length;
-          const aiMessage: Message = { id: base + 2, ...responseData };
-          return [...prev, { id: base + 1, type: "user", content: q }, aiMessage];
+          const uid = nextMessageId(prev);
+          const aiMessage: Message = { id: uid + 1, ...responseData };
+          return [...prev, { id: uid, type: "user", content: q }, aiMessage];
         });
         if (res.sql && table.length) {
           addToHistory({
@@ -590,11 +598,11 @@ export function Chat() {
       } catch (err) {
         const msg = formatApiErrorForChat(err);
         setMessages((prev) => {
-          const base = prev.length;
+          const uid = nextMessageId(prev);
           return [
             ...prev,
-            { id: base + 1, type: "user", content: q },
-            { id: base + 2, type: "ai", content: `Error: ${msg}` },
+            { id: uid, type: "user", content: q },
+            { id: uid + 1, type: "ai", content: `Error: ${msg}` },
           ];
         });
       }
@@ -605,11 +613,10 @@ export function Chat() {
     if (isDataLoaded) {
       console.log("⚠️ Using mock data (no sheet rows)");
       const responseData = generateResponse(q);
-      const aiMessage: Message = {
-        id: messages.length + 2,
-        ...responseData,
-      };
-      setMessages([...messages, userMessage, aiMessage]);
+      setMessages((prev) => {
+        const uid = nextMessageId(prev);
+        return [...prev, { id: uid, type: "user", content: q }, { id: uid + 1, ...responseData }];
+      });
       setInput("");
       if (responseData.sql && responseData.table) {
         addToHistory({
@@ -644,15 +651,18 @@ export function Chat() {
     if (isImage) {
       const token = getToken();
       if (!token) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: prev.length + 1,
-            type: "ai",
-            content:
-              "Log in to extract structured rows from financial statement images (LayoutLM + FinBERT pipeline).",
-          },
-        ]);
+        setMessages((prev) => {
+          const uid = nextMessageId(prev);
+          return [
+            ...prev,
+            {
+              id: uid,
+              type: "ai",
+              content:
+                "Log in to extract structured rows from financial statement images (LayoutLM + FinBERT pipeline).",
+            },
+          ];
+        });
         setIsUploading(false);
         event.target.value = "";
         return;
@@ -671,26 +681,32 @@ export function Chat() {
         } catch {
           /* ignore */
         }
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: prev.length + 1,
-            type: "ai",
-            content: `Imported **${file.name}** (${ing.extracted_items} row(s)). Open **Analytics** for charts, or ask a question here.`,
-          },
-        ]);
+        setMessages((prev) => {
+          const uid = nextMessageId(prev);
+          return [
+            ...prev,
+            {
+              id: uid,
+              type: "ai",
+              content: `Imported **${file.name}** (${ing.extracted_items} row(s)). Open **Analytics** for charts, or ask a question here.`,
+            },
+          ];
+        });
       } catch (err) {
         const msg = formatApiErrorForChat(err);
         setUploadedFile(file);
         setFileIngestedToServer(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: prev.length + 1,
-            type: "ai",
-            content: `Could not extract from image: ${msg}`,
-          },
-        ]);
+        setMessages((prev) => {
+          const uid = nextMessageId(prev);
+          return [
+            ...prev,
+            {
+              id: uid,
+              type: "ai",
+              content: `Could not extract from image: ${msg}`,
+            },
+          ];
+        });
       } finally {
         setIsUploading(false);
         event.target.value = "";
@@ -701,14 +717,17 @@ export function Chat() {
     if (isPdf) {
       const token = getToken();
       if (!token) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: prev.length + 1,
-            type: "ai",
-            content: "Log in to ingest PDFs using the backend PDF table extraction pipeline.",
-          },
-        ]);
+        setMessages((prev) => {
+          const uid = nextMessageId(prev);
+          return [
+            ...prev,
+            {
+              id: uid,
+              type: "ai",
+              content: "Log in to ingest PDFs using the backend PDF table extraction pipeline.",
+            },
+          ];
+        });
         setIsUploading(false);
         event.target.value = "";
         return;
@@ -727,26 +746,32 @@ export function Chat() {
         } catch {
           /* ignore */
         }
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: prev.length + 1,
-            type: "ai",
-            content: `Imported **${file.name}** (${ing.inserted_rows} fact(s)). Open **Analytics** for charts, or ask a question here.`,
-          },
-        ]);
+        setMessages((prev) => {
+          const uid = nextMessageId(prev);
+          return [
+            ...prev,
+            {
+              id: uid,
+              type: "ai",
+              content: `Imported **${file.name}** (${ing.inserted_rows} fact(s)). Open **Analytics** for charts, or ask a question here.`,
+            },
+          ];
+        });
       } catch (err) {
         const msg = formatApiErrorForChat(err);
         setUploadedFile(file);
         setFileIngestedToServer(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: prev.length + 1,
-            type: "ai",
-            content: `Could not ingest PDF: ${msg}`,
-          },
-        ]);
+        setMessages((prev) => {
+          const uid = nextMessageId(prev);
+          return [
+            ...prev,
+            {
+              id: uid,
+              type: "ai",
+              content: `Could not ingest PDF: ${msg}`,
+            },
+          ];
+        });
       } finally {
         setIsUploading(false);
         event.target.value = "";
@@ -781,14 +806,17 @@ export function Chat() {
       setIsUploading(false);
     } else {
       // Show error message in chat
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: prev.length + 1,
-          type: "ai",
-          content: `⚠️ ${result.error}`,
-        },
-      ]);
+      setMessages((prev) => {
+        const uid = nextMessageId(prev);
+        return [
+          ...prev,
+          {
+            id: uid,
+            type: "ai",
+            content: `⚠️ ${result.error}`,
+          },
+        ];
+      });
       setIsUploading(false);
     }
   };
@@ -859,17 +887,11 @@ export function Chat() {
   };
 
   return (
-    <div ref={rootRef} className="min-h-screen bg-background flex flex-col">
+    <div ref={rootRef} className="h-[100dvh] min-h-0 flex flex-col bg-background overflow-hidden">
       <Navbar ref={navRef} />
 
-      <div
-        ref={contentRef}
-        className="flex-1 max-w-5xl mx-auto w-full min-w-0 px-4 py-8"
-      >
-        <div
-          ref={titleRowRef}
-          className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
-        >
+      <div className="flex flex-1 flex-col min-h-0 min-w-0 max-w-5xl mx-auto w-full px-4 pt-5 pb-0">
+        <div className="mb-3 shrink-0 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="mb-2">Chat Interface</h1>
             <p className="text-muted-foreground">
@@ -897,8 +919,13 @@ export function Chat() {
           </button>
         </div>
 
-        {/* Messages */}
-        <div className="space-y-6 mb-24 min-w-0 max-w-full">
+        {/* Scroll only the thread — fixed composer used to cover later messages */}
+        <div
+          ref={messagesScrollRef}
+          data-lenis-prevent
+          className="flex-1 min-h-0 touch-pan-y overflow-y-auto overflow-x-hidden overscroll-y-auto"
+        >
+          <div className="space-y-6 py-2 pr-1 min-w-0 max-w-full">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -1332,12 +1359,14 @@ export function Chat() {
               )}
             </div>
           ))}
+          <div ref={messagesEndRef} className="h-px w-full shrink-0" aria-hidden />
+          </div>
         </div>
       </div>
 
-      {/* Input Box */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border">
-        <div className="max-w-5xl mx-auto px-4 py-4">
+      {/* Composer: in document flow so it never covers the message list */}
+      <div className="shrink-0 border-t border-border bg-background pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="max-w-5xl mx-auto w-full px-4 pt-3">
           {!isDataLoaded && !uploadedFile && !getToken() && (
             <div className="mb-3 p-3 bg-primary/10 border border-primary/20 rounded-lg text-sm text-center">
               <p className="text-primary">
