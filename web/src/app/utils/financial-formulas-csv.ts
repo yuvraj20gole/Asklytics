@@ -1214,6 +1214,20 @@ export function executeCsvFinancialFormulas(
     longCols,
   );
 
+  // If the user asked for a specific year/period, return just that period's values.
+  const extractRequestedPeriod = (): string | null => {
+    // Prefer explicit "FY 2021" / "FY2021"
+    const fy = userInput.match(/\bFY\s*(\d{4})\b/i);
+    const year = fy?.[1] ?? userInput.match(/\b(19|20)\d{2}\b/)?.[0] ?? null;
+    if (!year) return null;
+
+    // Find a period label in the dataset that contains that year.
+    // Works for "FY 2021", "2021", "FY2021", etc.
+    const hit = periods.find((p) => String(p).includes(year));
+    return hit ?? null;
+  };
+  const requestedPeriod = extractRequestedPeriod();
+
   const filterKeys = (row: ComputedRow, keys: string[]): DataRow => {
     const out: DataRow = {};
     for (const k of keys) {
@@ -1362,6 +1376,26 @@ export function executeCsvFinancialFormulas(
         chartValueFormat: chartIsPercent ? "percent" : undefined,
         insight: `Computed per-metric means from your CSV (${layoutDescription}).`,
         metrics: valueKeys,
+      };
+    }
+  }
+
+  if (requestedPeriod) {
+    const keys = kinds.includes("all") ? ALL_RESULT_SQL_KEYS : mergeKindColumns(kinds);
+    const row = computed.find((r) => String(r.period) === String(requestedPeriod));
+    if (row) {
+      const periodRow = filterKeys(row, keys);
+      const y = row[chartMetric];
+      const num = typeof y === "number" && Number.isFinite(y) ? y : 0;
+      return {
+        sql,
+        table: [periodRow],
+        chartData: [{ name: String(requestedPeriod), sales: num }],
+        message: `Result for **${requestedPeriod}**.`,
+        chartType: "bar",
+        chartValueFormat: chartIsPercent ? "percent" : undefined,
+        insight: `Filtered to the requested period (${requestedPeriod}).`,
+        metrics: [chartMetric],
       };
     }
   }
