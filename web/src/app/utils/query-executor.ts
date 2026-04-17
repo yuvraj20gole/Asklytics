@@ -1,3 +1,17 @@
+/**
+ * Local query execution for uploaded sheets (CSV/XLSX + ingested PDF/image rows).
+ *
+ * SEARCH TAGS:
+ * - @ui:ask_local_engine          → `executeQuery`
+ * - @ui:formula_engine_csv        → `executeCsvFinancialFormulas` (ratios, margins, YoY, aggregates)
+ * - @ui:long_facts_structured     → `executeLongFactsStructuredQuery` (year/metric/value layout)
+ * - @ui:generic_numeric_queries   → fallback heuristics for arbitrary numeric columns
+ * - @ui:currency_infer            → `detectCurrency` / `currency-infer.ts`
+ *
+ * This module is the “client-side brain” used by `pages/chat.tsx` and `pages/analytics.tsx`
+ * when an in-memory sheet exists, avoiding backend SQL for many common questions.
+ */
+
 import type { DataRow, QueryResult } from "../types/data";
 import { isFinancialFactsLayout } from "./analytics-infer";
 import {

@@ -1,0 +1,15 @@
+Dataset (for interpreting accuracy and scores below)
+- Task unit: each JSON item is one multi-word OCR sequence (words + boxes). The sklearn report below is token-level: each non-padding token is labeled O | YEAR | VALUE | METRIC (not one score per whole image or document).
+- Total samples in this run: 184; train samples: 156; validation samples: 28 (split seed 42).
+- Labeled tokens across the full dataset: 684; labeled tokens evaluated below (validation, non -100): 103.
+
+              precision    recall  f1-score   support
+
+           O     1.0000    1.0000    1.0000        19
+        YEAR     1.0000    1.0000    1.0000        27
+       VALUE     1.0000    1.0000    1.0000        28
+      METRIC     1.0000    1.0000    1.0000        29
+
+    accuracy                         1.0000       103
+   macro avg     1.0000    1.0000    1.0000       103
+weighted avg     1.0000    1.0000    1.0000       103

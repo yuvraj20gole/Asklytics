@@ -1,3 +1,18 @@
+"""
+Ask/SQL service routing.
+
+SEARCH TAGS:
+- @flow:ask_endpoint            → API handler that calls into this service
+- @sql:template_financial_facts → `template_sql_financial_facts`
+- @sql:template_formula_router  → `_template_formula_questions`
+- @sql:period_range_filter      → `_maybe_filter_formula_period` + `period_year_filter_sql`
+- @guard:sql_safety             → any guards that reject non-allowed tables (see `sql_guard.py`)
+
+Important: despite the module name, `/ask` is designed to be *deterministic* for
+common financial questions when `financial_facts` is present. These templates
+avoid hallucinated tables/columns and keep behavior stable in production.
+"""
+
 import re
 
 from app.core.config import get_settings

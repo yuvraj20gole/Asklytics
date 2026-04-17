@@ -1,3 +1,19 @@
+"""
+Ingest endpoints (PDF + image) for building `financial_facts` and `financial_tables`.
+
+SEARCH TAGS (for repo-wide grep):
+- @flow:upload_pdf            → `ingest_pdf` FastAPI route
+- @flow:upload_image          → `ingest_image` FastAPI route
+- @flow:pdf_table_extract     → `PDFFinancialIngestService.extract_all_tables`
+- @flow:pdf_to_facts          → `PDFFinancialIngestService.process_tables_to_facts`
+- @flow:pdf_image_fallback    → `_facts_from_pdf_image_fallback` OCR fallback
+- @flow:db_insert_financials  → SQLAlchemy inserts into `FinancialFact` / `FinancialTable`
+
+This file is the API entrypoint for uploading CSV/PDF/image-derived financials.
+The heavy lifting lives in `app/services/pdf_financial_ingest.py` and
+`app/services/image_financial_ingest.py`.
+"""
+
 import re
 import logging
 import os
@@ -21,6 +37,14 @@ ingest_service = PDFFinancialIngestService()
 logger = logging.getLogger(__name__)
 
 def _clean_period_facts(filename: str, parsed_facts):
+    """
+    @flow:ingest_sanity_gate
+
+    Period cleanup / sanity filter:
+    - Reject obviously wrong years (OCR/table misreads).
+    - If the PDF filename contains a report year, tighten acceptable years,
+      while still allowing OCR fallback methods through (they can be noisier).
+    """
     year_match = re.search(r"(19|20)\d{2}", filename)
     report_year = int(year_match.group(0)) if year_match else None
     cleaned = []
@@ -48,6 +72,19 @@ async def ingest_pdf(
     db: Session = Depends(get_db),
     _current_user: str = Depends(get_current_user),
 ) -> IngestPDFResponse:
+    """
+    @flow:upload_pdf
+
+    Upload a PDF statement and persist extracted facts.
+
+    Pipeline overview:
+    - Read bytes from multipart upload.
+    - Try structured table extraction first (fast, higher precision).
+    - If no facts: fallback to image/OCR pipeline.
+    - Clean/validate periods.
+    - Replace prior facts for the same `(company, source_file)` to avoid duplicates.
+    - Insert `FinancialTable` + `FinancialFact` and return a preview.
+    """
     filename = file.filename or "uploaded.pdf"
     logger.info("[PDF UPLOAD] filename=%s content_type=%s", filename, (file.content_type or ""))
     if not filename.lower().endswith(".pdf"):
@@ -57,15 +94,18 @@ async def ingest_pdf(
     if not payload:
         raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
 
+    # @flow:pdf_table_extract
     logger.info("[PDF PROCESS START] bytes=%d", len(payload))
     raw_tables, detected_currency, full_text = ingest_service.extract_all_tables(payload)
     logger.info("[PDF TABLES FOUND] tables=%d currency=%s", len(raw_tables), detected_currency)
+    # @flow:pdf_to_facts
     parsed_facts = ingest_service.process_tables_to_facts(
         raw_tables, detected_currency, full_text=full_text
     )
 
     if not parsed_facts:
         logger.warning("[PDF FALLBACK TRIGGERED] No structured tables found")
+        # @flow:pdf_image_fallback
         fallback_facts = ingest_service._facts_from_pdf_image_fallback(payload, detected_currency)
         if fallback_facts:
             logger.info(
@@ -93,6 +133,7 @@ async def ingest_pdf(
             detail="No structured financial facts extracted from tables OR images.",
         )
 
+    # @flow:db_insert_financials
     # Re-uploading the same file should replace prior facts instead of duplicating.
     db.query(FinancialTable).filter(
         FinancialTable.company == company.strip(),
@@ -155,6 +196,15 @@ async def ingest_image(
     file: UploadFile = File(...),
     _current_user: str = Depends(get_current_user),
 ) -> IngestImageResponse:
+    """
+    @flow:upload_image
+
+    Upload a single statement image and return extracted rows.
+
+    Notes:
+    - This endpoint currently returns extracted rows (preview) and does not insert into DB.
+    - The OCR/vision pipeline is lazily imported to keep API startup fast on hosts like Render.
+    """
     filename = file.filename or "uploaded"
     content_type = (file.content_type or "").lower()
     logger.info("[IMAGE INGEST] upload filename=%s content_type=%s", filename, content_type)
@@ -173,7 +223,7 @@ async def ingest_image(
     if not payload:
         raise HTTPException(status_code=400, detail="Uploaded image is empty.")
 
-    # Persist to a temp file so later TODOs (OpenCV/EasyOCR) can work by path.
+    # Persist to a temp file so OCR pipelines can work by path.
     import tempfile
 
     suffix = ext if ext in allowed_ext else ".png"
@@ -182,9 +232,10 @@ async def ingest_image(
         tmp_path = tmp.name
 
     try:
-        # Lazy import: avoids loading EasyOCR/torch/transformers at API startup (needed for Render).
+        # Lazy import: avoids loading EasyOCR/torch/transformers at API startup.
         from app.services.image_financial_ingest import process_image_financials
 
+        # @flow:image_to_rows
         result = process_image_financials(tmp_path)
         rows_raw = result.get("rows") or []
         rows = [

@@ -1,3 +1,18 @@
+"""
+PDF ingest pipeline: PDF bytes → tables/text → normalized facts → DB models.
+
+SEARCH TAGS:
+- @svc:pdf_ingest                  → `PDFFinancialIngestService`
+- @step:pdf_extract_all_tables     → `extract_all_tables`
+- @step:pdf_process_tables_to_facts→ `process_tables_to_facts`
+- @step:pdf_image_ocr_fallback     → `_facts_from_pdf_image_fallback`
+- @step:pdf_to_db_models           → `to_models` / `to_table_models`
+- @ai:table_extractor              → `AITableExtractor` usage (LLM-aided extraction)
+
+If you’re debugging “why didn’t my PDF ingest?”, start at:
+`backend/app/api/v1/endpoints/ingest.py` → `ingest_pdf`.
+"""
+
 import io
 import json
 import logging
@@ -219,6 +234,16 @@ def _detect_currency(raw_text: str) -> str:
 
 
 class PDFFinancialIngestService:
+    """
+    @svc:pdf_ingest
+
+    High-level responsibilities:
+    - Extract tables + full text from PDFs (`pdfplumber`).
+    - Identify financial statement tables (income statement heuristics).
+    - Normalize rows/cells into canonical `ParsedFact` records.
+    - Provide a fallback image/OCR path when table extraction yields nothing.
+    - Convert ParsedFacts and tables into SQLAlchemy models for persistence.
+    """
     PRIORITY_PAGES = 20
     REVENUE_ROW_HINTS = ("revenue", "revenue from operations", "total income")
     # Strict P&L table classification (full table text)
@@ -815,6 +840,17 @@ class PDFFinancialIngestService:
         return [(m, y, v) for (m, y), v in sorted(best.items(), key=lambda x: (x[0][0], x[0][1]))]
 
     def extract_all_tables(self, pdf_bytes: bytes) -> tuple[list[ExtractedTable], str, str]:
+        """
+        @step:pdf_extract_all_tables
+
+        Extract:
+        - `ExtractedTable[]`: table grids (page, index, rows)
+        - detected currency hint (from full-text scan)
+        - full extracted text (for downstream NLP/heuristics)
+
+        This is the first stage of PDF ingest; downstream will choose which tables
+        look like financial statements and then parse them into `ParsedFact`s.
+        """
         tables: list[ExtractedTable] = []
         raw_text: list[str] = []
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
@@ -892,6 +928,17 @@ class PDFFinancialIngestService:
         return True
 
     def process_tables_to_facts(self, tables: list[ExtractedTable], currency: str, full_text: str | None = None) -> list[ParsedFact]:
+        """
+        @step:pdf_process_tables_to_facts
+
+        Convert extracted PDF tables into normalized `ParsedFact` objects.
+        This stage handles:
+        - picking candidate statement tables (income statement / P&L)
+        - mapping row labels to canonical metrics (revenue, net_income, cogs, etc.)
+        - normalizing units (e.g. INR crores) and levels (consolidated vs standalone)
+        - a row-based parser for “table-like text” grids
+        - optional AI-assisted extraction for messy layouts (see @ai:table_extractor)
+        """
         candidates: list[ParsedFact] = []
         debug_tables: list[dict] = []
         total_tables = len(tables)
@@ -1513,6 +1560,16 @@ class PDFFinancialIngestService:
         return selected
 
     def _facts_from_pdf_image_fallback(self, pdf_bytes: bytes, currency_hint: str) -> list[ParsedFact]:
+        """
+        @step:pdf_image_ocr_fallback
+
+        Fallback when table extraction yields no usable facts:
+        - Render first N pages to PNG (pdf2image + poppler).
+        - Run the image financial pipeline (OCR + row reconstruction).
+        - Convert extracted rows into ParsedFact records.
+
+        This is intentionally best-effort and can be noisier than table extraction.
+        """
         try:
             from pdf2image import convert_from_bytes
         except ImportError:
@@ -1607,6 +1664,7 @@ class PDFFinancialIngestService:
         return facts, currency
 
     def to_table_models(self, company: str, source_file: str, tables: list[ExtractedTable]) -> list[FinancialTable]:
+        """@step:pdf_to_db_models Convert extracted tables into `FinancialTable` rows for inspection/debug."""
         return [
             FinancialTable(
                 company=company,
@@ -1619,6 +1677,7 @@ class PDFFinancialIngestService:
         ]
 
     def to_models(self, company: str, source_file: str, parsed_facts: list[ParsedFact]) -> list[FinancialFact]:
+        """@step:pdf_to_db_models Convert `ParsedFact` objects into persisted `FinancialFact` rows."""
         return [
             FinancialFact(
                 company=company,

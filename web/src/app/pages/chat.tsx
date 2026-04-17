@@ -454,15 +454,23 @@ export function Chat() {
     const q = input.trim();
     if (!q || !canChat) return;
 
+    // SEARCH TAGS:
+    // - @ui:ask_local_engine     → local query execution (`query-executor.ts`)
+    // - @ui:ask_backend_sql      → `/ask` backend route (SQL templates + sql_guard)
+    // - @ui:ingest_on_send       → lazy ingest PDFs/images only when user asks (auth required)
+    //
     // In-memory sheet (CSV/Excel or PDF/image facts in the same shape): run the same client pipeline as CSV
     // (financial formula engine, heuristics, display SQL). Avoids /ask + sql_guard for ratio-style questions.
     const token = getToken();
     let ingestPrefix = "";
     let imageMeta: ImageIngestMeta | undefined;
-    // Prefer client-side engine whenever the sheet has headers — even if rows are empty (avoids /ask + sql_guard for CSV).
+    // Prefer client-side engine whenever the sheet has headers — even if rows are empty.
     let rows = data?.sheets?.[0]?.rows ?? [];
     let cols = data?.sheets?.[0]?.columns ?? [];
 
+    // @ui:ingest_on_send
+    // PDFs/images can be uploaded before auth; if user is logged in and then asks a question,
+    // ingest to the backend first so `financial_facts` exists.
     if (token && uploadedFile && !fileIngestedToServer) {
       const lower = uploadedFile.name.toLowerCase();
       const isPdf = lower.endsWith(".pdf");
@@ -639,6 +647,11 @@ export function Chat() {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    // SEARCH TAGS:
+    // - @ui:upload_router     → file-type routing (image/pdf/csv/xlsx)
+    // - @ui:upload_pdf        → backend ingestPdf (table extract + OCR fallback)
+    // - @ui:upload_image      → backend ingestImage (OCR/LayoutLM + FinBERT)
+    // - @ui:upload_csv_local  → local parsing into UploadedData (no auth required)
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -648,6 +661,7 @@ export function Chat() {
     const isImage = /\.(png|jpg|jpeg)$/.test(lower);
     const isPdf = /\.pdf$/.test(lower);
 
+    // @ui:upload_image
     if (isImage) {
       const token = getToken();
       if (!token) {
@@ -714,6 +728,7 @@ export function Chat() {
       return;
     }
 
+    // @ui:upload_pdf
     if (isPdf) {
       const token = getToken();
       if (!token) {

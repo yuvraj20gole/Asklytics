@@ -1,3 +1,9 @@
+Dataset (for interpreting accuracy and scores below)
+- Task unit: one training row = one text line with exactly one label: revenue, expense, profit, or other (4-way line classification; one prediction per row).
+- Rows in the training frame after profit oversample: 6725.
+- Train rows: 5380; validation rows: 1345 (this report is computed only on the validation rows).
+- CSV shards combined: financial_dataset.csv, financial_dataset_extended.csv, financial_dataset_bulk.csv.
+
               precision    recall  f1-score   support
 
      revenue     1.0000    0.9925    0.9963       268

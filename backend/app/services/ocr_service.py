@@ -1,3 +1,17 @@
+"""
+OCR service wrapper (EasyOCR) used by image/PDF ingest pipelines.
+
+SEARCH TAGS:
+- @svc:ocr_easyocr            → `_get_reader` / `extract_text_with_boxes`
+- @fix:easyocr_ssl_cert       → `_configure_ssl_for_https_downloads`
+- @fix:easyocr_bidi_patch     → `_ensure_easyocr_bidi_compat`
+- @flow:image_ingest          → callers in `image_financial_ingest.py`
+- @flow:pdf_image_fallback    → callers in `pdf_financial_ingest.py`
+
+This module isolates third-party quirks (SSL CA bundle, bidi import path) so the rest
+of the pipeline can treat OCR as “tokens with boxes + confidence”.
+"""
+
 import logging
 import ssl
 

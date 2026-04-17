@@ -1,3 +1,18 @@
+"""
+SQL safety gate for `/ask` execution.
+
+SEARCH TAGS:
+- @guard:sql_only_select        → `validate`
+- @guard:block_mutations        → BLOCKED regex
+- @guard:financial_facts_filter → `_enforce_financial_fact_filters`
+
+Responsibilities:
+- Ensure only SELECT/CTE queries run (no mutation keywords).
+- Block hallucinated table names (e.g. `uploaded_data`).
+- Enforce `financial_facts` hygiene filters (`level` + `is_valid`) so templates and AI
+  queries remain consistent with ingested data.
+"""
+
 import re
 
 

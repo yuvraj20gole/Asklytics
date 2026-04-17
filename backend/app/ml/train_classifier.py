@@ -3,6 +3,13 @@ Fine-tune FinBERT (ProsusAI/finbert) for 4-way financial line classification.
 Run from repo root: PYTHONPATH=backend python -m app.ml.train_classifier
 
 Large shard (optional): PYTHONPATH=backend python -m app.ml.generate_financial_bulk_csv --rows 8000
+
+SEARCH TAGS:
+- @ml:finbert_train            → `main` training entrypoint
+- @ml:finbert_dataset          → `load_training_frame` + `DATA_FILES`
+- @ml:finbert_metrics          → `compute_metrics` + JSON report persistence
+- @ml:finbert_validation       → validation report + accuracy calculation
+- @ml:finbert_outputs          → `OUTPUT_DIR` (weights; gitignored) vs `REPORTS_DIR` (reports; kept)
 """
 
 from __future__ import annotations
@@ -90,6 +97,8 @@ def load_training_frame() -> pd.DataFrame:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
+    # @ml:finbert_dataset
+    # Training data is a concat of multiple shards under `backend/app/ml/data/`.
     df = load_training_frame()
     df = df.dropna(subset=["text", "label"])
     df["label"] = df["label"].str.strip().str.lower()
@@ -143,6 +152,9 @@ def main() -> None:
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    # @ml:finbert_metrics
+    # HuggingFace Trainer callback: produces the metrics shown during training and stored
+    # into the persisted JSON report below.
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
         preds = np.argmax(logits, axis=-1)
@@ -187,6 +199,7 @@ def main() -> None:
         callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
     )
 
+    # @ml:finbert_train
     logger.info("Starting training (max 10 epochs, early stopping on eval loss)…")
     train_out = trainer.train()
     logger.info("Training finished; saving to %s", OUTPUT_DIR)
@@ -196,6 +209,8 @@ def main() -> None:
     for k in sorted(metrics):
         print(f"  {k}: {metrics[k]}")
 
+    # @ml:finbert_outputs
+    # Model weights/tokenizer go to OUTPUT_DIR (gitignored); reports go to REPORTS_DIR (kept).
     model.save_pretrained(OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
 
@@ -204,6 +219,7 @@ def main() -> None:
         encoding="utf-8",
     )
 
+    # @ml:finbert_validation
     val_pred = trainer.predict(val_dataset)
     pred_ids = np.argmax(val_pred.predictions, axis=-1)
     names = [ID2LABEL[i] for i in range(len(LABEL_MAP))]
@@ -215,8 +231,19 @@ def main() -> None:
         digits=4,
         zero_division=0,
     )
+    shards_str = ", ".join(p.name for p in DATA_FILES if p.is_file()) or "(none)"
+    report_preamble = (
+        "Dataset (for interpreting accuracy and scores below)\n"
+        "- Task unit: one training row = one text line with exactly one label: "
+        "revenue, expense, profit, or other (4-way line classification; one prediction per row).\n"
+        f"- Rows in the training frame after profit oversample: {len(df)}.\n"
+        f"- Train rows: {len(train_dataset)}; validation rows: {len(val_dataset)} "
+        "(this report is computed only on the validation rows).\n"
+        f"- CSV shards combined: {shards_str}.\n\n"
+    )
+    report_full = report_preamble + report_str
     print("\n=== Validation classification report ===")
-    print(report_str)
+    print(report_full)
     acc = accuracy_score(val_pred.label_ids, pred_ids)
     p_w, r_w, f_w, _ = precision_recall_fscore_support(
         val_pred.label_ids, pred_ids, average="weighted", zero_division=0
@@ -240,6 +267,8 @@ def main() -> None:
         val_pred.label_ids, pred_ids, average="macro", zero_division=0
     )
 
+    # @ml:finbert_metrics
+    # Persist a machine-readable summary used by deployments/debugging (kept under REPORTS_DIR).
     summary = _json_sanitize(
         {
             "trained_at": datetime.now(timezone.utc).isoformat(),
@@ -274,11 +303,11 @@ def main() -> None:
     metrics_path = OUTPUT_DIR / "training_metrics.json"
     report_path = OUTPUT_DIR / "validation_report.txt"
     metrics_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    report_path.write_text(report_str, encoding="utf-8")
+    report_path.write_text(report_full, encoding="utf-8")
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     (REPORTS_DIR / "finbert_latest.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    (REPORTS_DIR / "finbert_latest_validation_report.txt").write_text(report_str, encoding="utf-8")
+    (REPORTS_DIR / "finbert_latest_validation_report.txt").write_text(report_full, encoding="utf-8")
 
     logger.info("Wrote metrics to %s and %s", metrics_path, REPORTS_DIR / "finbert_latest.json")
     logger.info("Wrote validation report to %s", report_path)

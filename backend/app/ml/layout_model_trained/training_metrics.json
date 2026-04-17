@@ -1,0 +1,117 @@
+{
+  "trained_at": "2026-04-17T15:22:32.346869+00:00",
+  "base_model": "microsoft/layoutlmv3-base",
+  "model_output_dir": "/Users/yuvrajgole/Documents/Sem 6 Project/backend/app/ml/layout_model_trained",
+  "dataset_path": "/Users/yuvrajgole/Documents/Sem 6 Project/backend/app/ml/data/layoutlm_dataset.json",
+  "dataset": {
+    "samples": 184,
+    "label_token_counts": {
+      "O": 129,
+      "YEAR": 177,
+      "METRIC": 194,
+      "VALUE": 184
+    },
+    "train_samples": 156,
+    "val_samples": 28,
+    "val_split_seed": 42
+  },
+  "train_summary_metrics": {
+    "train_runtime": 57.5168,
+    "train_samples_per_second": 21.698,
+    "train_steps_per_second": 5.425,
+    "total_flos": 61681991933952.0,
+    "train_loss": 0.09642373780823416,
+    "epoch": 3.0
+  },
+  "trainer_eval_metrics": {
+    "eval_loss": 0.0009640446514822543,
+    "eval_accuracy": 1.0,
+    "eval_precision": 1.0,
+    "eval_recall": 1.0,
+    "eval_f1": 1.0,
+    "eval_runtime": 1.1658,
+    "eval_samples_per_second": 24.018,
+    "eval_steps_per_second": 6.005
+  },
+  "validation": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "precision_weighted": 1.0,
+    "recall_weighted": 1.0,
+    "f1_weighted": 1.0,
+    "per_class": {
+      "O": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 19.0
+      },
+      "YEAR": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 27.0
+      },
+      "VALUE": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 28.0
+      },
+      "METRIC": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 29.0
+      },
+      "accuracy": 1.0,
+      "macro avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 103.0
+      },
+      "weighted avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 103.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        19,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        27,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        28,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        29
+      ]
+    ]
+  },
+  "training_args": {
+    "epochs": 8,
+    "per_device_train_batch_size": 4,
+    "per_device_eval_batch_size": 4,
+    "learning_rate": 5e-05,
+    "early_stopping": true
+  }
+}
