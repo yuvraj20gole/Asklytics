@@ -76,6 +76,18 @@ function messageCurrency(message: Message): string | null {
   return cur ? String(cur) : null;
 }
 
+/** Legend / tooltip name for single-series charts from `executeQuery` metrics. */
+function chartSeriesDisplayName(message: Message): string {
+  if (message.chartValueFormat === "percent") return "Profit margin";
+  const m = message.metrics?.[0];
+  if (m === "revenue") return "Revenue";
+  if (m === "expenses") return "Total expenses";
+  if (m === "other_income") return "Other income";
+  if (m === "net_profit") return "Net profit";
+  if (typeof m === "string" && m.length) return m.replace(/_/g, " ");
+  return "Value";
+}
+
 /** Table/chart rows from the API may be null or sparse; never pass those to Object.keys. */
 function isDataRow(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
@@ -1166,13 +1178,18 @@ export function Chat() {
                               <YAxis
                                 key="chat-yaxis"
                                 stroke="#64748b"
-                                tickFormatter={(v) =>
-                                  message.chartValueFormat === "percent"
-                                    ? `${v}%`
-                                    : typeof v === "number"
-                                      ? v.toLocaleString()
-                                      : String(v)
-                                }
+                                tickFormatter={(v) => {
+                                  if (message.chartValueFormat === "percent") return `${v}%`;
+                                  if (typeof v !== "number" || !Number.isFinite(v)) return String(v);
+                                  if (message.chartValueFormat === "currency") {
+                                    const code = messageCurrency(message);
+                                    const sym = currencySymbol(code);
+                                    return sym
+                                      ? `${sym}${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                      : v.toLocaleString();
+                                  }
+                                  return v.toLocaleString();
+                                }}
                               />
                               <Tooltip
                                 key="chat-tooltip"
@@ -1207,7 +1224,7 @@ export function Chat() {
                                   <Line
                                     key="value-line-chart"
                                     dataKey={valueKey}
-                                    name={message.chartValueFormat === "percent" ? "Profit margin" : "Value"}
+                                    name={chartSeriesDisplayName(message)}
                                     stroke="#1e7a5c"
                                     strokeWidth={3}
                                     dot={{ fill: "#1e7a5c", r: 5 }}
@@ -1223,13 +1240,18 @@ export function Chat() {
                               <YAxis
                                 key="chat-yaxis"
                                 stroke="#64748b"
-                                tickFormatter={(v) =>
-                                  message.chartValueFormat === "percent"
-                                    ? `${v}%`
-                                    : typeof v === "number"
-                                      ? v.toLocaleString()
-                                      : String(v)
-                                }
+                                tickFormatter={(v) => {
+                                  if (message.chartValueFormat === "percent") return `${v}%`;
+                                  if (typeof v !== "number" || !Number.isFinite(v)) return String(v);
+                                  if (message.chartValueFormat === "currency") {
+                                    const code = messageCurrency(message);
+                                    const sym = currencySymbol(code);
+                                    return sym
+                                      ? `${sym}${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                      : v.toLocaleString();
+                                  }
+                                  return v.toLocaleString();
+                                }}
                               />
                               <Tooltip
                                 key="chat-tooltip"
@@ -1264,7 +1286,7 @@ export function Chat() {
                                   <Bar
                                     key="value-bar-chart"
                                     dataKey={valueKey}
-                                    name={message.chartValueFormat === "percent" ? "Profit margin" : "Value"}
+                                    name={chartSeriesDisplayName(message)}
                                     fill="#1e7a5c"
                                     radius={[8, 8, 0, 0]}
                                   />

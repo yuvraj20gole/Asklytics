@@ -321,6 +321,100 @@ function apexSeriesFromLongFactRows(data: DataRow[], rawCol: string): ApexStyleW
   return [...byYear.values()].sort((a, b) => a.year - b.year);
 }
 
+/** Typo-tolerant lowercasing for NL matching on uploaded financial rows. */
+function normalizeLooseFinancePrompt(userInput: string): string {
+  let s = userInput.toLowerCase();
+  s = s.replace(/\bshiw\b/g, "show");
+  s = s.replace(/\btreand\b/g, "trend");
+  s = s.replace(/\brevnue\b|\brevneu\b|\brevenu\b/g, "revenue");
+  s = s.replace(/\bexpence\b|\bexpences\b/g, "expense");
+  s = s.replace(/\bprotit\b|\bprofict\b/g, "profit");
+  return s;
+}
+
+function sqlLiteralNumber(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "NULL";
+  return String(v);
+}
+
+/** Portable `VALUES` SQL for chat export (SQLite / PostgreSQL style). */
+function sqlValuesWideSnapshot(
+  headerComments: readonly string[],
+  alias: string,
+  columnNames: readonly string[],
+  tuples: readonly (readonly (number | null))[],
+): string {
+  const header = headerComments.map((c) => `-- ${c}`).join("\n");
+  if (!columnNames.length || !tuples.length) {
+    return `${header}\nSELECT NULL AS ${columnNames[0] ?? "x"} WHERE 0;`;
+  }
+  const body = tuples
+    .map((row) => {
+      const cells = columnNames.map((_, i) => sqlLiteralNumber(row[i] ?? null));
+      return `  (${cells.join(", ")})`;
+    })
+    .join(",\n");
+  const cols = columnNames.join(", ");
+  return `${header}\nSELECT ${cols}\nFROM (\n  VALUES\n${body}\n) AS ${alias}(${cols})\nORDER BY ${columnNames[0]};`;
+}
+
+/** ISO code for chat table rows so tooltips/Y-axis can format money (see chat.tsx). */
+function isoCurrencyFromDisplayPrefix(prefix: string): string {
+  if (prefix.includes("$")) return "USD";
+  if (prefix.includes("€")) return "EUR";
+  if (prefix.includes("£")) return "GBP";
+  return "INR";
+}
+
+function withIsoCurrency<T extends Record<string, unknown>>(rows: T[], iso: string): Array<T & { currency: string }> {
+  return rows.map((r) => ({ ...r, currency: iso }));
+}
+
+/** Plain-language trend note; calls out YoY dips, not only start vs end. */
+function insightYearValueTrend(
+  series: readonly { year: number; value: number }[],
+  metricLabel: string,
+  currencyPrefix: string,
+): string {
+  if (!series.length) return `No ${metricLabel} values matched this question.`;
+  if (series.length === 1) {
+    const s = series[0]!;
+    return `${metricLabel} for ${s.year}: ${currencyPrefix}${s.value.toLocaleString()}.`;
+  }
+  const a = series[0]!;
+  const b = series[series.length - 1]!;
+  const pct = a.value !== 0 ? Math.round((10000 * (b.value - a.value)) / Math.abs(a.value)) / 100 : null;
+
+  const yoyDownYears: number[] = [];
+  for (let i = 1; i < series.length; i++) {
+    if (series[i]!.value < series[i - 1]!.value) yoyDownYears.push(series[i]!.year);
+  }
+
+  const pctSentence =
+    pct == null ? "" : ` From ${a.year} to ${b.year} the overall change is about ${pct >= 0 ? "+" : ""}${pct}%.`;
+
+  const labelLc = metricLabel.toLowerCase();
+  let pathNote = "";
+  if (yoyDownYears.length === 0) {
+    pathNote = "Each year is at or above the prior year in this window.";
+  } else if (pct != null && b.value > a.value) {
+    pathNote = `Year-on-year ${labelLc} was lower moving into ${yoyDownYears.join(
+      " and ",
+    )} than the prior year, then recovered—the ${pct >= 0 ? "+" : ""}${pct}% change above is from ${a.year} to ${b.year} only, not every step.`;
+  } else if (pct != null && b.value < a.value) {
+    pathNote = `Year-on-year decreases include: ${yoyDownYears.join(", ")}.`;
+  } else {
+    pathNote = `Some years are below the prior year (${yoyDownYears.join(", ")}).`;
+  }
+
+  return (
+    `${metricLabel} goes from ${currencyPrefix}${a.value.toLocaleString()} (${a.year}) to ${currencyPrefix}${b.value.toLocaleString()} (${b.year}), ${series.length} periods.` +
+    pctSentence +
+    ` ${pathNote}` +
+    " These numbers match the chart and are read in order from each uploaded statement line (wide text), not from a blended total across every metric row."
+  );
+}
+
 /**
  * Structured Q&A for ingested long facts (PDF/image rows). Avoids grouping `value` across all metrics.
  */
@@ -337,8 +431,9 @@ function executeLongFactsStructuredQuery(
   const rawCol = columns.find((c) => /^raw$/i.test(c));
   if (!yearCol || !metricCol || !valueCol) return null;
 
-  const lower = userInput.toLowerCase();
+  const lower = normalizeLooseFinancePrompt(userInput);
   const cur = detectCurrency(data, columns);
+  const moneyIso = isoCurrencyFromDisplayPrefix(cur);
 
   const apex = rawCol ? apexSeriesFromLongFactRows(data, rawCol) : [];
   const apexOk = apex.length >= 2;
@@ -416,15 +511,23 @@ function executeLongFactsStructuredQuery(
         const pick = series.reduce((a, b) =>
           wantLow ? (b.value < a.value ? b : a) : (b.value > a.value ? b : a),
         );
-        const sql = `-- Net profit from parsed \`raw\` (5th numeric column in wide P&L row)\n-- Avoids SUM(value) across mixed metrics.`;
+        const sql = sqlValuesWideSnapshot(
+          [
+            "Net profit by year (wide screenshot / PDF rows).",
+            "Fifth numeric token after the year in each `raw` line (wide P&L layout).",
+          ],
+          "net_profit_series",
+          ["year", "net_profit"],
+          series.map((s) => [s.year, s.value]),
+        );
+        const trail = insightYearValueTrend(series, "Net profit", cur);
         return {
           sql,
           table: [{ Year: pick.year, "Net profit": pick.value }],
           chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
           message: `${wantLow ? "Lowest" : "Highest"} net profit is **${pick.year}** at ${cur}${pick.value.toLocaleString()}.`,
           chartType: "line",
-          insight:
-            "Interprets “profit” as net profit for image/PDF P&L tables and reads it from the parsed `raw` row.",
+          insight: `${wantLow ? "Lowest" : "Highest"} year highlighted in the table; ${trail}`,
           metrics: ["net_profit"],
         };
       }
@@ -452,7 +555,7 @@ function executeLongFactsStructuredQuery(
   }
 
   // --- Revenue trend by year (long facts) ---
-  if (
+  const asksRevenueTrendContext =
     /\brevenue\b|\bsales\b|\bturnover\b/.test(lower) &&
     (lower.includes("trend") ||
       lower.includes("over") ||
@@ -461,24 +564,41 @@ function executeLongFactsStructuredQuery(
       lower.includes("by year") ||
       lower.includes("plot") ||
       lower.includes("chart") ||
-      lower.includes("show me"))
-  ) {
+      lower.includes("graph") ||
+      lower.includes("show me") ||
+      (/\bshow\b/.test(lower) && /\brevenue\b|\bsales\b|\bturnover\b/.test(lower)) ||
+      (lower.includes("see") && /\brevenue\b|\bsales\b|\bturnover\b/.test(lower)) ||
+      /\bhistorical\b|\btrajectory\b|\bprogression\b/.test(lower));
+
+  if (asksRevenueTrendContext) {
     const series = apexOk
       ? apex.map((p) => ({ year: p.year, value: p.revenue }))
       : longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsOperatingRevenue);
     if (series.length < 1) return null;
     const sql = apexOk
-      ? `-- Operating revenue from parsed \`raw\` wide rows (first numeric column after year)`
+      ? sqlValuesWideSnapshot(
+          [
+            "Optional documentation only (-- lines are not executed). Snapshot matches the chat table.",
+            "Rule: operating revenue = first numeric token after the calendar year on each uploaded wide statement line (not the mixed metric/value rows).",
+          ],
+          "operating_revenue_trend",
+          ["year", "revenue"],
+          series.map((s) => [s.year, s.value]),
+        )
       : `-- Long facts: operating revenue by year\nSELECT ${yearCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%revenue%'\n  AND LOWER(CAST(${metricCol} AS TEXT)) NOT LIKE '%other%'\n  AND LOWER(CAST(${metricCol} AS TEXT)) NOT LIKE '%total_income%'\nORDER BY ${yearCol};`;
     return {
       sql,
-      table: series.map((s) => ({ Year: s.year, Revenue: s.value })),
+      table: withIsoCurrency(
+        series.map((s) => ({ Year: s.year, Revenue: s.value })),
+        moneyIso,
+      ),
       chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
       message: `Operating revenue by year (${series.length} period(s)).`,
       chartType: "line",
+      chartValueFormat: "currency",
       insight: apexOk
-        ? "Uses the parsed wide `raw` row to avoid mixing metrics in the `value` column."
-        : "Filters `metric` to operating revenue (excludes other income / total income).",
+        ? insightYearValueTrend(series, "Operating revenue", cur)
+        : "Filters metric to operating revenue (excludes other income / total income).",
       metrics: ["revenue"],
     };
   }
@@ -493,6 +613,7 @@ function executeLongFactsStructuredQuery(
       lower.includes("by year") ||
       lower.includes("plot") ||
       lower.includes("chart") ||
+      lower.includes("graph") ||
       lower.includes("show me"))
   ) {
     let series = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsTotalExpenses);
@@ -501,7 +622,15 @@ function executeLongFactsStructuredQuery(
     }
     if (series.length < 1) return null;
     const sql = apexOk
-      ? `-- Total expenses from parsed \`raw\` (4th numeric column in wide P&L row)`
+      ? sqlValuesWideSnapshot(
+          [
+            "Total expenses by year (wide `raw` rows).",
+            "Fourth numeric token after the year on each line.",
+          ],
+          "total_expenses_trend",
+          ["year", "total_expenses"],
+          series.map((s) => [s.year, s.value]),
+        )
       : `-- Long facts: total expenses by year\nSELECT ${yearCol}, ${metricCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%expense%'\nORDER BY ${yearCol};`;
     const rows: DataRow[] = series.map((s) => ({ Year: s.year, "Total expenses": s.value }));
     return {
@@ -511,7 +640,7 @@ function executeLongFactsStructuredQuery(
       message: `Total expenses by year (${series.length} period(s)).`,
       chartType: "line",
       insight: apexOk
-        ? "Uses the parsed wide `raw` row so expenses don’t accidentally sum mixed metrics."
+        ? insightYearValueTrend(series, "Total expenses", cur)
         : "Filters `metric` to expense rows before grouping by year.",
       metrics: ["expenses"],
     };
@@ -527,6 +656,7 @@ function executeLongFactsStructuredQuery(
       lower.includes("by year") ||
       lower.includes("plot") ||
       lower.includes("chart") ||
+      lower.includes("graph") ||
       lower.includes("show me"))
   ) {
     let series = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsOtherIncome);
@@ -535,7 +665,15 @@ function executeLongFactsStructuredQuery(
     }
     if (series.length < 1) return null;
     const sql = apexOk
-      ? `-- Other income from parsed \`raw\` (2nd numeric column after year)`
+      ? sqlValuesWideSnapshot(
+          [
+            "Other income by year (wide `raw` rows).",
+            "Second numeric token after the year on each line.",
+          ],
+          "other_income_trend",
+          ["year", "other_income"],
+          series.map((s) => [s.year, s.value]),
+        )
       : `-- Long facts: other income by year\nSELECT ${yearCol}, ${metricCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%other%income%'\nORDER BY ${yearCol};`;
     const rows: DataRow[] = series.map((s) => ({ Year: s.year, "Other income": s.value }));
     return {
@@ -545,7 +683,7 @@ function executeLongFactsStructuredQuery(
       message: `Other income by year (${series.length} period(s)).`,
       chartType: "line",
       insight: apexOk
-        ? "Uses the parsed wide `raw` row (second numeric column after year)."
+        ? insightYearValueTrend(series, "Other income", cur)
         : "Filters `metric` to other income rows before grouping by year.",
       metrics: ["other_income"],
     };
@@ -564,8 +702,18 @@ function executeLongFactsStructuredQuery(
       Revenue: p.revenue,
       "Total expenses": p.total_expenses,
     }));
+    const sql = sqlValuesWideSnapshot(
+      [
+        "Operating revenue and total expenses by year (same wide `raw` line per year).",
+        "Revenue = first numeric token after year; total expenses = fourth token.",
+      ],
+      "revenue_vs_expenses",
+      ["year", "revenue", "total_expenses"],
+      apex.map((p) => [p.year, p.revenue, p.total_expenses]),
+    );
+    const revSeries = apex.map((p) => ({ year: p.year, value: p.revenue }));
     return {
-      sql: `-- Operating revenue vs total expenses from parsed \`raw\` (wide P&L rows)`,
+      sql,
       table: rows,
       chartData: rows.map((row) => ({
         name: String(row.Year),
@@ -575,7 +723,7 @@ function executeLongFactsStructuredQuery(
       message: `Operating **revenue** vs **total expenses** by year (${rows.length} periods).`,
       chartType: "multi-bar",
       insight:
-        "Revenue = first amount after year; expenses = 4th money column in each `raw` row. Net profit and other columns are not shown here.",
+        `Compares the two headline flows from each uploaded line. ${insightYearValueTrend(revSeries, "Revenue", cur)} (Expenses column is the 4th number after the year.)`,
       metrics: ["revenue", "expenses"],
     };
   }
@@ -627,7 +775,18 @@ function executeLongFactsStructuredQuery(
     if (va == null || vb == null || va === 0) return null;
     const pct = ((vb - va) / va) * 100;
     const sql = apexOk
-      ? `-- Operating revenue from parsed \`raw\` wide rows (${yA} vs ${yB})`
+      ? sqlValuesWideSnapshot(
+          [
+            `Operating revenue: ${yA} vs ${yB} (wide \`raw\`, first amount after year).`,
+            `Overall change ≈ ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%.`,
+          ],
+          "revenue_two_year",
+          ["year", "revenue"],
+          [
+            [yA, va],
+            [yB, vb],
+          ],
+        )
       : `-- Long facts: operating revenue for ${yA} vs ${yB}\nSELECT ${yearCol}, ${metricCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(${metricCol}) LIKE '%revenue%' AND LOWER(${metricCol}) NOT LIKE '%other%'\n  AND LOWER(${metricCol}) NOT LIKE '%total_income%'\n  AND ${yearCol} IN (${yA}, ${yB});`;
     return {
       sql,
@@ -643,7 +802,7 @@ function executeLongFactsStructuredQuery(
       message: `Revenue changed from ${cur}${va.toLocaleString()} (${yA}) to ${cur}${vb.toLocaleString()} (${yB}), **${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%** overall.`,
       chartType: "bar",
       insight: apexOk
-        ? "Uses **first numeric column** after the year in each `raw` row (operating revenue), not the stored `value` field."
+        ? `**${yA}→${yB}:** ${pct >= 0 ? "up" : "down"} about **${Math.abs(pct).toFixed(1)}%** on operating revenue parsed from each line’s first amount after the year (not the mixed \`value\` column).`
         : `End-to-end change across the period: ${pct.toFixed(1)}% ${pct >= 0 ? "growth" : "decline"}.`,
     };
   }
@@ -698,7 +857,8 @@ function executeLongFactsStructuredQuery(
       lower.includes("by year") ||
       lower.includes("plot") ||
       lower.includes("describe") ||
-      lower.includes("chart"))
+      lower.includes("chart") ||
+      lower.includes("graph"))
   ) {
     let series = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsTotalExpenses);
     if (series.length < 1 && apexOk) {
@@ -706,7 +866,15 @@ function executeLongFactsStructuredQuery(
     }
     if (series.length < 1) return null;
     const sql = apexOk
-      ? `-- Total expenses from parsed \`raw\` (4th numeric column in wide P&L row)`
+      ? sqlValuesWideSnapshot(
+          [
+            "Total expenses by year (wide `raw` rows).",
+            "Fourth numeric token after the year on each line.",
+          ],
+          "total_expenses_trend_alt",
+          ["year", "total_expenses"],
+          series.map((s) => [s.year, s.value]),
+        )
       : `-- Long facts: total expenses by year\nSELECT ${yearCol}, ${valueCol}\nFROM uploaded_data\nWHERE LOWER(CAST(${metricCol} AS TEXT)) LIKE '%expense%'\nORDER BY ${yearCol};`;
     return {
       sql,
@@ -714,7 +882,9 @@ function executeLongFactsStructuredQuery(
       chartData: series.map((s) => ({ name: String(s.year), sales: s.value })),
       message: `Total expenses by year (${series.length} periods).`,
       chartType: "line",
-      insight: `From ${cur}${series[0].value.toLocaleString()} (${series[0].year}) to ${cur}${series[series.length - 1].value.toLocaleString()} (${series[series.length - 1].year}).`,
+      insight: apexOk
+        ? insightYearValueTrend(series, "Total expenses", cur)
+        : `From ${cur}${series[0].value.toLocaleString()} (${series[0].year}) to ${cur}${series[series.length - 1].value.toLocaleString()} (${series[series.length - 1].year}).`,
     };
   }
 
@@ -728,7 +898,20 @@ function executeLongFactsStructuredQuery(
         "Other income % of revenue":
           p.revenue !== 0 ? Math.round((10000 * p.other_income) / p.revenue) / 100 : "—",
       }));
-      const sql = `-- From parsed \`raw\`: other_income / revenue`;
+      const sql = sqlValuesWideSnapshot(
+        [
+          "Other income vs operating revenue by year (wide `raw`).",
+          "Percent = other_income / revenue × 100 (NULL when revenue is 0).",
+        ],
+        "other_income_pct_of_revenue",
+        ["year", "other_income", "revenue", "other_income_pct_of_revenue"],
+        apex.map((p) => [
+          p.year,
+          p.other_income,
+          p.revenue,
+          p.revenue !== 0 ? Math.round((10000 * p.other_income) / p.revenue) / 100 : null,
+        ]),
+      );
       return {
         sql,
         table: rows,
@@ -739,7 +922,8 @@ function executeLongFactsStructuredQuery(
         message: `Other income as % of operating revenue, by year.`,
         chartType: "line",
         chartValueFormat: "percent",
-        insight: "Parsed from wide `raw` rows (columns 2 and 1 after year).",
+        insight:
+          "Shows how large **other income** is relative to **operating revenue** each year (same numbers as the chart).",
       };
     }
     const rev = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsOperatingRevenue);
@@ -783,8 +967,22 @@ function executeLongFactsStructuredQuery(
         "Expenses % of total income":
           p.total_income !== 0 ? Math.round((10000 * p.total_expenses) / p.total_income) / 100 : "—",
       }));
+      const sql = sqlValuesWideSnapshot(
+        [
+          "Total expenses vs total income by year (wide `raw`).",
+          "expenses_pct_of_total_income = expenses / total_income × 100 (NULL when total income is 0).",
+        ],
+        "expenses_pct_of_total_income",
+        ["year", "total_income", "total_expenses", "expenses_pct_of_total_income"],
+        apex.map((p) => [
+          p.year,
+          p.total_income,
+          p.total_expenses,
+          p.total_income !== 0 ? Math.round((10000 * p.total_expenses) / p.total_income) / 100 : null,
+        ]),
+      );
       return {
-        sql: `-- From parsed \`raw\`: total_expenses / total_income`,
+        sql,
         table: rows,
         chartData: rows.map((row) => ({
           name: String(row.Year),
@@ -793,7 +991,8 @@ function executeLongFactsStructuredQuery(
         message: `Total expenses as % of total income, by year.`,
         chartType: "line",
         chartValueFormat: "percent",
-        insight: "Parsed from wide `raw` rows.",
+        insight:
+          "Lower **expenses % of total income** usually means more income is left after operating costs (chart uses the same ratio as the table).",
       };
     }
     const ti = longFactsPick(data, yearCol, metricCol, valueCol, longFactsIsTotalIncome);
@@ -901,7 +1100,7 @@ export function executeQuery(
   data: DataRow[],
   columns: string[]
 ): QueryResult {
-  const lowerInput = userInput.toLowerCase();
+  const lowerInput = normalizeLooseFinancePrompt(userInput);
 
   const kindsFromQuestion = detectCsvFormulaKinds(lowerInput);
   if (kindsFromQuestion?.length) {
